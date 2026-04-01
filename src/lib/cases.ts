@@ -339,7 +339,9 @@ export async function resolveReport(ticketRaw: string, requestedVersion: string,
   const versions = await getReportVersions(ticket, casesRoot)
 
   const selectedOption =
-    versions.find((version) => version.value === requestedVersion) ?? versions[0]
+    versions.find((version) => version.value === requestedVersion)
+    ?? versions[versions.length - 1]
+    ?? versions[0]
 
   const reportDirectory = path.join(
     casesRoot,

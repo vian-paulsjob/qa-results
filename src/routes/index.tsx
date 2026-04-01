@@ -566,7 +566,7 @@ function App() {
     }
 
     setSlugInput(resolvedTicket)
-    void loadTicket(resolvedTicket, selectedReportVersion)
+    void loadTicket(resolvedTicket, '')
     setIsCommandOpen(false)
   }
 
@@ -600,7 +600,7 @@ function App() {
                 return
               }
 
-              void loadTicket(ticket, selectedReportVersion)
+              void loadTicket(ticket, '')
             }}
           >
             <Input

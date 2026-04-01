@@ -52,6 +52,20 @@ describe('cases helpers', () => {
     expect(report.markdown).toBe('v2 body')
   })
 
+  it('defaults to latest version when version is not provided', async () => {
+    const ticketRoot = path.join(tempRoot, 'MAMAS-7001')
+    await mkdir(path.join(ticketRoot, 'v1'), { recursive: true })
+    await mkdir(path.join(ticketRoot, 'v2'), { recursive: true })
+    await writeFile(path.join(ticketRoot, 'v1', 'test-results.md'), 'v1 body', 'utf8')
+    await writeFile(path.join(ticketRoot, 'v2', 'test-results.md'), 'v2 body', 'utf8')
+
+    const report = await resolveReport('MAMAS-7001', '', tempRoot)
+
+    expect(report.selectedVersion).toBe('v2')
+    expect(report.reportPath).toBe('MAMAS-7001/v2/test-results.md')
+    expect(report.markdown).toBe('v2 body')
+  })
+
   it('builds version metadata with last updated text', async () => {
     const ticketRoot = path.join(tempRoot, 'MAMAS-9000')
     await mkdir(path.join(ticketRoot, 'v1'), { recursive: true })
