@@ -11,6 +11,9 @@ export const env = createEnv({
     CASES_DIR: z.string().default('./data'),
     BASIC_AUTH_USERNAME: z.string().min(1).default('admin'),
     BASIC_AUTH_PASSWORD: z.string().min(1).default('admin'),
+    ALLOW_UNAUTHENTICATED_LINK_PREVIEW: z.string().default('true'),
+    SHARE_TOKEN_SECRET: z.string().min(1).default('change-me-share-secret'),
+    SHARE_LINK_TTL_SECONDS: z.string().default('604800'),
   },
 
   clientPrefix: 'VITE_',
