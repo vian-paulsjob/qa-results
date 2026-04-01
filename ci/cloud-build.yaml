@@ -8,8 +8,6 @@ substitutions:
   _BUCKET: paul-oracle_results
   _BASIC_AUTH_USERNAME_SECRET: qa-results-basic-auth-username
   _BASIC_AUTH_PASSWORD_SECRET: qa-results-basic-auth-password
-  _SHARE_TOKEN_SECRET: qa-results-share-token-secret
-  _SHARE_LINK_TTL_SECONDS: "604800"
 
 steps:
   - name: gcr.io/cloud-builders/gcloud
@@ -26,8 +24,6 @@ steps:
       sed -i "s|{{_BUCKET}}|${_BUCKET}|g" ci/*.yaml
       sed -i "s|{{_BASIC_AUTH_USERNAME_SECRET}}|${_BASIC_AUTH_USERNAME_SECRET}|g" ci/*.yaml
       sed -i "s|{{_BASIC_AUTH_PASSWORD_SECRET}}|${_BASIC_AUTH_PASSWORD_SECRET}|g" ci/*.yaml
-      sed -i "s|{{_SHARE_TOKEN_SECRET}}|${_SHARE_TOKEN_SECRET}|g" ci/*.yaml
-      sed -i "s|{{_SHARE_LINK_TTL_SECONDS}}|${_SHARE_LINK_TTL_SECONDS}|g" ci/*.yaml
 
   - name: gcr.io/k8s-skaffold/skaffold
     entrypoint: skaffold
