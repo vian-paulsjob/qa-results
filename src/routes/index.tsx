@@ -135,6 +135,35 @@ function normalizeSlug(value: string) {
   return (value || '').trim().toUpperCase()
 }
 
+function formatVersionUpdatedTextForViewer(lastUpdatedMs: number) {
+  if (!Number.isFinite(lastUpdatedMs) || lastUpdatedMs <= 0) {
+    return 'Unknown'
+  }
+
+  return new Intl.DateTimeFormat(undefined, {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  }).format(lastUpdatedMs)
+}
+
+function localizeVersionOption(option: ReportVersionOption): ReportVersionOption {
+  const versionText = option.versionText || option.value
+  const updatedText = formatVersionUpdatedTextForViewer(option.lastUpdatedMs)
+  return {
+    ...option,
+    versionText,
+    updatedText,
+    label: `${versionText} • ${updatedText}`,
+  }
+}
+
+function localizeVersionOptions(options: ReportVersionOption[]) {
+  return options.map(localizeVersionOption)
+}
+
 function cleanPath(value: string) {
   return String(value || '').split(/[?#]/)[0]
 }
@@ -486,7 +515,7 @@ function App() {
         `/api/report?ticket=${encodeURIComponent(ticket)}&version=${encodeURIComponent(requestedVersion)}`,
       )
 
-      setReportVersions(report.versions)
+      setReportVersions(localizeVersionOptions(report.versions))
       setSelectedReportVersion(report.selectedVersion)
       setMarkdownContent(report.markdown)
       setStatus(`Loaded ${report.reportPath}`)
