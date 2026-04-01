@@ -3,9 +3,9 @@ substitutions:
   _REGION: europe-west10
   _REGISTRY: docker
   _IMAGE: ${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REGISTRY}/${_SERVICE}
-  _SERVICE_ACCOUNT: qa-results@${PROJECT_ID}.iam.gserviceaccount.com
+  _SERVICE_ACCOUNT: oracle-agent@${PROJECT_ID}.iam.gserviceaccount.com
   _BUILD_SERVICE_ACCOUNT: projects/${PROJECT_ID}/serviceAccounts/builder@${PROJECT_ID}.iam.gserviceaccount.com
-  _BUCKET: oracle_results
+  _BUCKET: paul-oracle_results
   _BASIC_AUTH_USERNAME_SECRET: qa-results-basic-auth-username
   _BASIC_AUTH_PASSWORD_SECRET: qa-results-basic-auth-password
 
