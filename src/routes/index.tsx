@@ -511,7 +511,7 @@ function App() {
         }`}
       >
         <aside
-          className={`rounded-2xl border border-slate-300 bg-white shadow-sm ${
+          className={`sidebar-scroll rounded-2xl border border-slate-300 bg-white shadow-sm ${
             isMobile ? 'static max-h-none' : 'sticky top-4 max-h-[calc(100vh-46px)] overflow-auto'
           }`}
         >
