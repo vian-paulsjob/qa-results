@@ -24,6 +24,9 @@ App runs on `http://localhost:3000`.
 - `CASES_DIR` (default: `./data`)
 - `BASIC_AUTH_USERNAME` (default: `admin`)
 - `BASIC_AUTH_PASSWORD` (default: `admin`)
+- `ALLOW_UNAUTHENTICATED_LINK_PREVIEW` (default: `true`)
+- `SHARE_TOKEN_SECRET` (default: `change-me-share-secret`)
+- `SHARE_LINK_TTL_SECONDS` (default: `604800`)
 - `VITE_APP_TITLE` (default: `QA Test Result`)
 
 ## API routes
@@ -32,8 +35,16 @@ App runs on `http://localhost:3000`.
 - `GET /api/browse?prefix=...`
 - `GET /api/report?ticket=...&version=...`
 - `GET /api/file?path=...`
+- `GET /api/share-link?ticket=...&version=...`
+- `GET /share/<signed-token>` (public share URL; redirects humans to report, serves metadata HTML to preview crawlers)
 
-Global request middleware in `src/start.ts` enforces HTTP Basic Auth for all routes except `/api/health`.
+Global request middleware in `src/start.ts` enforces HTTP Basic Auth for most routes.
+Public exceptions:
+- `/api/health`
+- `/favicon.ico`
+- `/share/<signed-token>` (metadata-only share page for Jira/Teams previews)
+
+With the default `ALLOW_UNAUTHENTICATED_LINK_PREVIEW=true`, known preview bots can fetch non-API GET/HEAD pages for link-card metadata. Set it to `false` to disable user-agent based bypass.
 
 ## Build and test
 

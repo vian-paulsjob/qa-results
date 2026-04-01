@@ -47,6 +47,13 @@ spec:
                 secretKeyRef:
                   name: "{{_BASIC_AUTH_PASSWORD_SECRET}}"
                   key: latest
+            - name: SHARE_TOKEN_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: "{{_SHARE_TOKEN_SECRET}}"
+                  key: latest
+            - name: SHARE_LINK_TTL_SECONDS
+              value: "{{_SHARE_LINK_TTL_SECONDS}}"
           resources:
             limits:
               cpu: 1000m
