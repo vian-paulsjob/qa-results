@@ -185,6 +185,27 @@
   color: inherit;
 }
 
+.markdown table {
+  width: 100%;
+  table-layout: fixed;
+}
+
+.markdown th,
+.markdown td {
+  min-width: 0;
+  vertical-align: top;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.markdown td code,
+.markdown th code {
+  white-space: break-spaces;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
 .sidebar-scroll {
   scrollbar-gutter: stable;
   scrollbar-width: thin;
