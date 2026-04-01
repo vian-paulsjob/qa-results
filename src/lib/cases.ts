@@ -20,6 +20,9 @@ export type ReportVersionOption = {
   value: string
   label: string
   prefix: string
+  lastUpdatedMs: number
+  updatedText: string
+  versionText: string
 }
 
 export type ReportResolveResult = {
@@ -175,6 +178,67 @@ function parseVersionNumber(version: string) {
   return match ? Number(match[1]) : Number.NaN
 }
 
+function formatVersionUpdatedText(lastUpdatedMs: number) {
+  if (!Number.isFinite(lastUpdatedMs) || lastUpdatedMs <= 0) {
+    return 'Unknown'
+  }
+
+  return new Intl.DateTimeFormat(undefined, {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  }).format(lastUpdatedMs)
+}
+
+function buildVersionOption(value: string, prefix: string, lastUpdatedMs: number): ReportVersionOption {
+  const updatedText = formatVersionUpdatedText(lastUpdatedMs)
+  return {
+    value,
+    prefix,
+    lastUpdatedMs,
+    updatedText,
+    versionText: value,
+    label: `${value} • ${updatedText}`,
+  }
+}
+
+async function getDirectoryLastUpdatedMs(directory: string): Promise<number> {
+  let entries: Awaited<ReturnType<typeof fs.readdir>>
+
+  try {
+    entries = await fs.readdir(directory, { withFileTypes: true })
+  } catch {
+    return 0
+  }
+
+  let maxUpdatedMs = 0
+
+  for (const entry of entries) {
+    const absolutePath = path.join(directory, entry.name)
+
+    if (entry.isDirectory()) {
+      const nestedMaxUpdatedMs = await getDirectoryLastUpdatedMs(absolutePath)
+      if (nestedMaxUpdatedMs > maxUpdatedMs) {
+        maxUpdatedMs = nestedMaxUpdatedMs
+      }
+      continue
+    }
+
+    if (!entry.isFile()) {
+      continue
+    }
+
+    const stat = await fs.stat(absolutePath)
+    if (stat.mtimeMs > maxUpdatedMs) {
+      maxUpdatedMs = stat.mtimeMs
+    }
+  }
+
+  return maxUpdatedMs
+}
+
 async function findBestReportFile(directory: string) {
   let entries: Awaited<ReturnType<typeof fs.readdir>>
 
@@ -226,17 +290,37 @@ export async function getReportVersions(ticket: string, casesRoot = getCasesRoot
   try {
     entries = await fs.readdir(ticketDirectory, { withFileTypes: true })
   } catch {
-    return [{ value: 'v1', label: 'v1', prefix: 'v1/' }]
+    return [buildVersionOption('v1', 'v1/', 0)]
   }
 
-  const versions = entries
-    .filter((entry) => entry.isDirectory() && /^v\d+$/i.test(entry.name))
-    .map((entry) => ({
-      value: entry.name,
-      label: entry.name,
-      prefix: `${entry.name}/`,
-    }))
-    .sort((a, b) => parseVersionNumber(a.value) - parseVersionNumber(b.value))
+  const versionEntries = entries.filter(
+    (entry) => entry.isDirectory() && /^v\d+$/i.test(entry.name),
+  )
+
+  const versions = await Promise.all(
+    versionEntries.map(async (entry) => {
+      const versionPath = path.join(ticketDirectory, entry.name)
+      const lastUpdatedMs = await getDirectoryLastUpdatedMs(versionPath)
+      return buildVersionOption(entry.name, `${entry.name}/`, lastUpdatedMs)
+    }),
+  )
+
+  versions.sort((a, b) => {
+    const aNumber = parseVersionNumber(a.value)
+    const bNumber = parseVersionNumber(b.value)
+
+    if (Number.isNaN(aNumber) && Number.isNaN(bNumber)) {
+      return a.value.localeCompare(b.value)
+    }
+    if (Number.isNaN(aNumber)) {
+      return 1
+    }
+    if (Number.isNaN(bNumber)) {
+      return -1
+    }
+
+    return aNumber - bNumber
+  })
 
   if (versions.length > 0) {
     return versions
@@ -244,10 +328,10 @@ export async function getReportVersions(ticket: string, casesRoot = getCasesRoot
 
   const legacyReport = await findBestReportFile(ticketDirectory)
   if (legacyReport) {
-    return [{ value: 'legacy', label: 'legacy', prefix: '' }]
+    return [buildVersionOption('legacy', '', legacyReport.modifiedMs)]
   }
 
-  return [{ value: 'v1', label: 'v1', prefix: 'v1/' }]
+  return [buildVersionOption('v1', 'v1/', 0)]
 }
 
 export async function resolveReport(ticketRaw: string, requestedVersion: string, casesRoot = getCasesRoot()): Promise<ReportResolveResult> {

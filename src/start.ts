@@ -13,6 +13,49 @@ function unauthorizedResponse() {
   })
 }
 
+function parseBooleanEnv(value: string | undefined) {
+  if (!value) return false
+  const normalized = value.trim().toLowerCase()
+  return (
+    normalized === '1' ||
+    normalized === 'true' ||
+    normalized === 'yes' ||
+    normalized === 'on'
+  )
+}
+
+function isPublicMetadataPath(pathname: string) {
+  if (pathname === '/api/health') {
+    return true
+  }
+  if (pathname === '/favicon.ico') {
+    return true
+  }
+  if (pathname.startsWith('/share/')) {
+    return true
+  }
+  return false
+}
+
+function isPreviewBotRequest(request: Request, pathname: string) {
+  if (!parseBooleanEnv(env.ALLOW_UNAUTHENTICATED_LINK_PREVIEW)) {
+    return false
+  }
+
+  if (request.method !== 'GET' && request.method !== 'HEAD') {
+    return false
+  }
+
+  if (pathname.startsWith('/api/')) {
+    return false
+  }
+
+  const userAgent = request.headers.get('user-agent') || ''
+  return /(teams|skypeuripreview|microsoft office|msteams|teamsbot|atlassian|jira|confluence|iframely)/i.test(
+    userAgent,
+  )
+}
+
 function isAuthorized(request: Request) {
   const authHeader = request.headers.get('authorization')
   if (!authHeader || !authHeader.startsWith('Basic ')) {
@@ -126,7 +169,11 @@ const staticAssetMiddleware = createMiddleware().server(async ({ pathname, next 
 })
 
 const basicAuthMiddleware = createMiddleware().server(async ({ pathname, request, next }) => {
-  if (pathname === '/api/health') {
+  if (isPublicMetadataPath(pathname)) {
+    return next()
+  }
+
+  if (isPreviewBotRequest(request, pathname)) {
     return next()
   }
 

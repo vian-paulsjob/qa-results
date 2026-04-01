@@ -3,6 +3,7 @@ import path from 'node:path'
 import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import {
+  getReportVersions,
   listBrowseItems,
   normalizeFilePath,
   resolveFileForRead,
@@ -49,6 +50,23 @@ describe('cases helpers', () => {
     expect(report.selectedVersion).toBe('v2')
     expect(report.reportPath).toBe('MAMAS-7000/v2/test-results.md')
     expect(report.markdown).toBe('v2 body')
+  })
+
+  it('builds version metadata with last updated text', async () => {
+    const ticketRoot = path.join(tempRoot, 'MAMAS-9000')
+    await mkdir(path.join(ticketRoot, 'v1'), { recursive: true })
+    await mkdir(path.join(ticketRoot, 'v2', 'evidence'), { recursive: true })
+    await writeFile(path.join(ticketRoot, 'v1', 'test-results.md'), 'v1', 'utf8')
+    await writeFile(path.join(ticketRoot, 'v2', 'test-results.md'), 'v2', 'utf8')
+    await writeFile(path.join(ticketRoot, 'v2', 'evidence', 'screenshot.png'), 'image', 'utf8')
+
+    const versions = await getReportVersions('mamas-9000', tempRoot)
+
+    expect(versions.map((version) => version.value)).toEqual(['v1', 'v2'])
+    expect(versions[0].versionText).toBe('v1')
+    expect(versions[0].lastUpdatedMs).toBeGreaterThan(0)
+    expect(versions[0].updatedText).not.toBe('Unknown')
+    expect(versions[0].label).toMatch(/^v1 • /)
   })
 
   it('rejects path traversal and out-of-root paths', async () => {
