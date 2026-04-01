@@ -1,10 +1,52 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { Children, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import {
+  AlertCircle,
+  CheckCircle2,
+  Command as CommandIcon,
+  FileText,
+  FolderOpen,
+  ListTree,
+  Loader2,
+  Share2,
+} from 'lucide-react'
 import ReactMarkdown, { type Components } from 'react-markdown'
 import rehypeAutolinkHeadings from 'rehype-autolink-headings'
 import rehypeSanitize from 'rehype-sanitize'
 import rehypeSlug from 'rehype-slug'
 import remarkGfm from 'remark-gfm'
+import { Alert, AlertDescription, AlertTitle } from '#/components/ui/alert'
+import { Badge } from '#/components/ui/badge'
+import { Button } from '#/components/ui/button'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '#/components/ui/card'
+import {
+  Command,
+  CommandDialog,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+  CommandSeparator,
+  CommandShortcut,
+} from '#/components/ui/command'
+import { Input } from '#/components/ui/input'
+import { ScrollArea } from '#/components/ui/scroll-area'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+} from '#/components/ui/select'
+import { Separator } from '#/components/ui/separator'
+import { Skeleton } from '#/components/ui/skeleton'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '#/components/ui/tabs'
+import { isCommandPaletteShortcut, resolveTicketForCommand } from '#/lib/command'
+import {
+  buildOgMetadata,
+  DEFAULT_OG_DESCRIPTION,
+  DEFAULT_OG_IMAGE_ALT,
+} from '#/lib/seo'
 
 type BrowseItem = {
   key: string
@@ -23,6 +65,9 @@ type ReportVersionOption = {
   value: string
   label: string
   prefix: string
+  lastUpdatedMs: number
+  updatedText: string
+  versionText: string
 }
 
 type ReportResponse = {
@@ -39,7 +84,48 @@ type TocItem = {
   level: number
 }
 
+type HomeSearch = {
+  ticket?: string
+  version?: string
+}
+
 export const Route = createFileRoute('/')({
+  validateSearch: (search: Record<string, unknown>): HomeSearch => ({
+    ticket: typeof search.ticket === 'string' ? search.ticket : undefined,
+    version: typeof search.version === 'string' ? search.version : undefined,
+  }),
+  loaderDeps: ({ search }) => ({
+    ticket: search.ticket || '',
+    version: search.version || '',
+  }),
+  loader: ({ deps }) =>
+    buildOgMetadata({
+      siteUrl: process.env.PUBLIC_SITE_URL,
+      ticketRaw: deps.ticket,
+      versionRaw: deps.version,
+    }),
+  head: ({ loaderData }) => ({
+    meta: [
+      { title: loaderData.title },
+      { name: 'description', content: loaderData.description || DEFAULT_OG_DESCRIPTION },
+      { property: 'og:title', content: loaderData.title },
+      { property: 'og:type', content: 'website' },
+      { property: 'og:site_name', content: 'QA Test Result' },
+      { property: 'og:description', content: loaderData.description || DEFAULT_OG_DESCRIPTION },
+      { property: 'og:image', content: loaderData.image },
+      { property: 'og:image:secure_url', content: loaderData.image },
+      { property: 'og:image:type', content: 'image/x-icon' },
+      { property: 'og:image:alt', content: DEFAULT_OG_IMAGE_ALT },
+      { property: 'og:url', content: loaderData.url },
+      { name: 'twitter:card', content: 'summary_large_image' },
+      { name: 'twitter:title', content: loaderData.title },
+      { name: 'twitter:description', content: loaderData.description || DEFAULT_OG_DESCRIPTION },
+      { name: 'twitter:image', content: loaderData.image },
+    ],
+    links: [
+      { rel: 'canonical', href: loaderData.url },
+    ],
+  }),
   component: App,
 })
 
@@ -144,21 +230,20 @@ function EvidenceFileCard({ sourcePath, label }: EvidenceNodeProps) {
   const kind = evidenceKind(displayPath)
 
   return (
-    <a
-      href={sourcePath}
-      target="_blank"
-      rel="noopener noreferrer"
-      className="my-2 flex items-center gap-3 rounded-lg border border-slate-300 bg-white p-2.5 text-slate-900 no-underline hover:bg-slate-50"
-    >
-      <span className="inline-flex h-6 min-w-10 items-center justify-center rounded-full border border-slate-300 bg-slate-100 px-2 text-[11px] font-bold text-slate-600">
-        {evidenceBadge(kind)}
-      </span>
-      <span className="flex min-w-0 flex-col gap-0.5">
-        <span className="truncate text-sm font-semibold text-blue-700">
-          {fileNameFromPath(displayPath) || 'Open evidence file'}
-        </span>
-        <span className="truncate text-xs text-slate-500">{displayPath}</span>
-      </span>
+    <a href={sourcePath} target="_blank" rel="noopener noreferrer" className="my-2 block no-underline">
+      <Card size="sm" className="border border-border/80 py-0 shadow-none transition-colors hover:bg-muted/30">
+        <CardContent className="flex items-center gap-3 py-3">
+          <Badge variant="outline" className="font-semibold">
+            {evidenceBadge(kind)}
+          </Badge>
+          <span className="flex min-w-0 flex-col gap-0.5">
+            <span className="truncate text-sm font-semibold text-primary">
+              {fileNameFromPath(displayPath) || 'Open evidence file'}
+            </span>
+            <span className="truncate text-xs text-muted-foreground">{displayPath}</span>
+          </span>
+        </CardContent>
+      </Card>
     </a>
   )
 }
@@ -198,7 +283,14 @@ function App() {
     'Load a ticket to generate the section index.',
   )
   const [reportVersions, setReportVersions] = useState<ReportVersionOption[]>([
-    { value: 'v1', label: 'v1', prefix: 'v1/' },
+    {
+      value: 'v1',
+      label: 'v1 • Unknown',
+      prefix: 'v1/',
+      lastUpdatedMs: 0,
+      updatedText: 'Unknown',
+      versionText: 'v1',
+    },
   ])
   const [selectedReportVersion, setSelectedReportVersion] = useState('v1')
 
@@ -208,10 +300,20 @@ function App() {
   const [browseLoading, setBrowseLoading] = useState(false)
   const [browseError, setBrowseError] = useState('')
 
+  const [isCommandOpen, setIsCommandOpen] = useState(false)
+  const [shareLinkLoading, setShareLinkLoading] = useState(false)
+  const [shareToast, setShareToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null)
   const [isMobile, setIsMobile] = useState(false)
+  const shareToastTimerRef = useRef<number | null>(null)
   const viewerRef = useRef<HTMLDivElement | null>(null)
 
   const pageTitle = currentSlug ? `QA Test Result - ${currentSlug}` : 'QA Test Result'
+  const selectedVersionOption = useMemo(
+    () => reportVersions.find((option) => option.value === selectedReportVersion),
+    [reportVersions, selectedReportVersion],
+  )
+  const selectedVersionText = selectedVersionOption?.versionText || selectedReportVersion || 'v1'
+  const selectedVersionUpdatedText = selectedVersionOption?.updatedText || 'Unknown'
 
   useEffect(() => {
     document.title = pageTitle
@@ -222,6 +324,38 @@ function App() {
     onResize()
     window.addEventListener('resize', onResize)
     return () => window.removeEventListener('resize', onResize)
+  }, [])
+
+  useEffect(() => {
+    return () => {
+      if (shareToastTimerRef.current) {
+        window.clearTimeout(shareToastTimerRef.current)
+      }
+    }
+  }, [])
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (!isCommandPaletteShortcut(event)) {
+        return
+      }
+
+      const target = event.target as HTMLElement | null
+      if (target?.isContentEditable) {
+        return
+      }
+
+      const tagName = target?.tagName?.toLowerCase() || ''
+      if (tagName === 'input' || tagName === 'textarea' || tagName === 'select') {
+        return
+      }
+
+      event.preventDefault()
+      setIsCommandOpen((open) => !open)
+    }
+
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
   }, [])
 
   const browseBreadcrumbs = useMemo(() => {
@@ -343,7 +477,7 @@ function App() {
     setMarkdownContent('')
     setTocItems([])
     setTocPlaceholder('Building section index...')
-    setStatus(`Loading ${ticket} ...`)
+    setStatus(`Loading ${ticket} report and version metadata ...`)
 
     try {
       const report = await fetchJson<ReportResponse>(
@@ -418,269 +552,510 @@ function App() {
     void browseTo(item.key)
   }
 
+  function loadTicketFromCommand() {
+    const resolvedTicket = resolveTicketForCommand(slugInput, currentSlug)
+    if (!resolvedTicket) {
+      setStatus('No ticket to load. Enter a ticket ID first.', true)
+      setIsCommandOpen(false)
+      return
+    }
+
+    setSlugInput(resolvedTicket)
+    void loadTicket(resolvedTicket, selectedReportVersion)
+    setIsCommandOpen(false)
+  }
+
+  function showShareToast(type: 'success' | 'error', message: string) {
+    setShareToast({ type, message })
+    if (shareToastTimerRef.current) {
+      window.clearTimeout(shareToastTimerRef.current)
+    }
+    shareToastTimerRef.current = window.setTimeout(() => {
+      setShareToast(null)
+    }, 3200)
+  }
+
+  async function copyShareLink() {
+    const ticket = currentSlug || normalizeSlug(slugInput)
+    if (!ticket) {
+      setStatus('No ticket to share. Enter a ticket ID first.', true)
+      return
+    }
+
+    setShareLinkLoading(true)
+    try {
+      const payload = await fetchJson<{ shareUrl: string; expiresAt: string }>(
+        `/api/share-link?ticket=${encodeURIComponent(ticket)}&version=${encodeURIComponent(selectedReportVersion)}`,
+      )
+
+      try {
+        await navigator.clipboard.writeText(payload.shareUrl)
+        setStatus(`Share link copied. Expires at ${new Date(payload.expiresAt).toLocaleString()}.`)
+        showShareToast('success', 'Share link copied to clipboard.')
+      } catch {
+        setStatus(`Share link: ${payload.shareUrl}`)
+        showShareToast('error', 'Clipboard access denied. Share link shown in status text.')
+      }
+    } catch (error) {
+      setStatus(`Unable to create share link (${(error as Error).message}).`, true)
+      showShareToast('error', 'Unable to create share link.')
+    } finally {
+      setShareLinkLoading(false)
+    }
+  }
+
   return (
     <main className="mx-auto max-w-screen-xl px-5 py-6">
-      <section className="rounded-2xl border border-slate-300 bg-white p-5 shadow-sm">
-        <div className="mb-2 text-xs font-extrabold tracking-wider text-violet-700 uppercase">
-          QA Results
-        </div>
-        <h1 className="m-0 text-3xl leading-tight font-extrabold tracking-tight text-slate-900">
-          {pageTitle}
-        </h1>
-        <p className="mt-2 max-w-3xl text-sm text-slate-600">
-          Browse QA ticket reports from the mounted cases directory or load one
-          directly by ID.
-        </p>
-
-        <form
-          className="mt-4 flex flex-wrap items-center gap-2.5"
-          onSubmit={(event) => {
-            event.preventDefault()
-            const ticket = normalizeSlug(slugInput)
-            setSlugInput(ticket)
-
-            if (!ticket) {
-              setStatus('Please enter a ticket ID.', true)
-              return
-            }
-
-            void loadTicket(ticket, selectedReportVersion)
-          }}
-        >
-          <input
-            value={slugInput}
-            onChange={(event) => setSlugInput(event.target.value)}
-            type="text"
-            placeholder="MAMAS-7325"
-            autoComplete="off"
-            spellCheck={false}
-            aria-label="Ticket ID"
-            required
-            className="h-11 min-w-60 flex-1 rounded-xl border border-slate-300 px-3.5 text-sm tracking-wide uppercase outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-200"
-          />
-
-          <button
-            type="submit"
-            className="h-11 rounded-xl bg-violet-700 px-4 text-sm font-bold text-white hover:bg-violet-800"
+      <Card className="border border-border/80 bg-card/95 py-0 shadow-sm">
+        <CardHeader className="pt-5">
+          <Badge
+            variant="outline"
+            className="h-6 w-fit gap-1.5 border-primary/20 bg-primary/5 px-2.5 py-1 leading-none font-semibold tracking-[0.08em] text-primary uppercase"
           >
-            Load Ticket
-          </button>
+            <span className="size-1.5 rounded-full bg-primary/70" aria-hidden="true" />
+            QA Results
+          </Badge>
+          <CardTitle className="text-3xl tracking-tight">{pageTitle}</CardTitle>
+          <CardDescription>
+            Browse QA ticket reports from the mounted cases directory or load one directly by ID.
+          </CardDescription>
+        </CardHeader>
 
-          <select
-            value={selectedReportVersion}
-            onChange={(event) => {
-              const version = event.target.value
-              setSelectedReportVersion(version)
+        <CardContent className="space-y-3 pb-5">
+          <form
+            className="flex flex-wrap items-center gap-2.5"
+            onSubmit={(event) => {
+              event.preventDefault()
+              const ticket = normalizeSlug(slugInput)
+              setSlugInput(ticket)
 
-              const slug = currentSlug || normalizeSlug(slugInput)
-              if (!slug) {
+              if (!ticket) {
+                setStatus('Please enter a ticket ID.', true)
                 return
               }
 
-              void loadTicket(slug, version)
+              void loadTicket(ticket, selectedReportVersion)
             }}
-            className="h-11 min-w-44 rounded-xl border border-slate-300 bg-white px-3 text-sm"
           >
-            {reportVersions.map((option) => (
-              <option key={option.value} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </select>
-        </form>
+            <Input
+              value={slugInput}
+              onChange={(event) => setSlugInput(event.target.value)}
+              type="text"
+              placeholder="MAMAS-7325"
+              autoComplete="off"
+              spellCheck={false}
+              aria-label="Ticket ID"
+              required
+              disabled={loading}
+              className="h-11 min-w-56 flex-1 tracking-wide uppercase"
+            />
 
-        <div className="mt-2.5 text-sm text-slate-600">
-          Direct link format:{' '}
-          <code className="rounded-md border border-slate-300 bg-slate-50 px-1.5 py-0.5 font-mono text-sm">
-            ?ticket=MAMAS-7325&version=v1
-          </code>
-        </div>
+            <Select
+              value={selectedReportVersion}
+              disabled={loading}
+              onValueChange={(version) => {
+                setSelectedReportVersion(version)
 
-        <div
-          className={`mt-1.5 min-h-[20px] text-sm ${
-            statusError ? 'font-semibold text-rose-700' : 'text-slate-600'
-          }`}
-        >
-          {statusText}
-        </div>
-      </section>
+                const slug = currentSlug || normalizeSlug(slugInput)
+                if (!slug) {
+                  return
+                }
+
+                void loadTicket(slug, version)
+              }}
+            >
+              <SelectTrigger
+                size="lg"
+                className="h-12 min-w-[20rem] overflow-visible rounded-xl border-border/90 px-3.5 py-0"
+              >
+                <span className="flex min-w-0 items-center gap-1.5 py-px text-sm leading-6">
+                  <span className="truncate font-semibold">{selectedVersionText}</span>
+                  <span className="text-muted-foreground">•</span>
+                  <span className="truncate pt-px pb-0.5 italic text-muted-foreground">
+                    {selectedVersionUpdatedText}
+                  </span>
+                </span>
+              </SelectTrigger>
+              <SelectContent
+                side="bottom"
+                align="start"
+                sideOffset={8}
+                alignItemWithTrigger={false}
+                className="min-w-[20rem] rounded-xl p-1.5"
+              >
+                {reportVersions.map((option) => (
+                  <SelectItem
+                    key={option.value}
+                    value={option.value}
+                    className="min-h-12 rounded-lg px-3 py-3 leading-6"
+                  >
+                    <span className="font-semibold">{option.versionText || option.value}</span>
+                    <span className="mx-1 text-muted-foreground">•</span>
+                    <span className="pt-px pb-0.5 italic text-muted-foreground">
+                      {option.updatedText || 'Unknown'}
+                    </span>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+
+            <Button type="submit" disabled={loading} className="h-11 px-4 font-semibold">
+              {loading ? <Loader2 className="mr-1.5 size-4 animate-spin" /> : null}
+              Load Ticket
+            </Button>
+
+            <Button
+              type="button"
+              variant="outline"
+              className="h-11"
+              onClick={() => setIsCommandOpen(true)}
+            >
+              <CommandIcon className="mr-1.5 size-4" />
+              Command
+            </Button>
+
+            <Button
+              type="button"
+              variant="secondary"
+              className="h-11"
+              disabled={shareLinkLoading}
+              onClick={() => void copyShareLink()}
+            >
+              {shareLinkLoading ? <Loader2 className="mr-1.5 size-4 animate-spin" /> : <Share2 className="mr-1.5 size-4" />}
+              Copy Share Link
+            </Button>
+          </form>
+
+          <div className="flex items-center gap-2 text-xs text-muted-foreground">
+            {loading ? (
+              <Loader2 className="size-3.5 animate-spin text-primary" />
+            ) : (
+              <span className="size-2 rounded-full bg-primary/70" aria-hidden="true" />
+            )}
+            <span className={loading ? 'animate-pulse' : ''}>
+              {loading
+                ? 'Loading report and version details...'
+                : `Version ${selectedVersionText} • Last updated ${selectedVersionUpdatedText}`}
+            </span>
+          </div>
+
+          <p className="text-xs text-muted-foreground">
+            Direct link format:{' '}
+            <code className="rounded-md border border-border bg-muted px-1.5 py-0.5 font-mono text-xs text-foreground">
+              ?ticket=MAMAS-7325&version=v1
+            </code>
+          </p>
+
+          {statusText ? (
+            <Alert variant={statusError ? 'destructive' : 'default'}>
+              {statusError ? null : <CheckCircle2 className="size-4" />}
+              <AlertTitle>{statusError ? 'Unable to complete request' : 'Status'}</AlertTitle>
+              <AlertDescription>{statusText}</AlertDescription>
+            </Alert>
+          ) : null}
+        </CardContent>
+      </Card>
 
       <section
         className={`mt-4 grid items-start gap-4 ${
-          isMobile ? 'grid-cols-1' : 'grid-cols-[280px_minmax(0,1fr)]'
+          isMobile ? 'grid-cols-1' : 'grid-cols-[300px_minmax(0,1fr)]'
         }`}
       >
-        <aside
-          className={`sidebar-scroll rounded-2xl border border-slate-300 bg-white shadow-sm ${
-            isMobile ? 'static max-h-none' : 'sticky top-4 max-h-[calc(100vh-46px)] overflow-auto'
+        <Card
+          className={`border border-border/80 py-0 shadow-sm ${
+            isMobile ? 'static' : 'sticky top-4'
           }`}
         >
-          <div className="flex border-b border-slate-200 text-sm font-semibold">
-            <button
-              type="button"
-              onClick={() => setSidebarTab('browse')}
-              className={`flex-1 px-3 py-2.5 text-center transition-colors ${
-                sidebarTab === 'browse'
-                  ? 'border-b-2 border-violet-700 text-violet-700'
-                  : 'text-slate-500 hover:text-slate-700'
-              }`}
-            >
-              Browse
-            </button>
-            <button
-              type="button"
-              onClick={() => setSidebarTab('toc')}
-              className={`flex-1 px-3 py-2.5 text-center transition-colors ${
-                sidebarTab === 'toc'
-                  ? 'border-b-2 border-violet-700 text-violet-700'
-                  : 'text-slate-500 hover:text-slate-700'
-              }`}
-            >
-              Contents
-            </button>
-          </div>
+          <Tabs
+            value={sidebarTab}
+            onValueChange={(value) => setSidebarTab(value as 'browse' | 'toc')}
+            className="gap-0"
+          >
+            <CardHeader className="pb-0">
+              <TabsList variant="line" className="w-full rounded-none bg-transparent p-0">
+                <TabsTrigger value="browse" className="h-10 flex-1 rounded-none">
+                  <FolderOpen className="size-4" />
+                  Browse
+                </TabsTrigger>
+                <TabsTrigger value="toc" className="h-10 flex-1 rounded-none">
+                  <ListTree className="size-4" />
+                  Contents
+                </TabsTrigger>
+              </TabsList>
+            </CardHeader>
 
-          {sidebarTab === 'browse' ? (
-            <div className="p-3.5">
-              <nav className="mb-3 flex flex-wrap items-center gap-1 text-xs text-slate-500">
-                <button
-                  type="button"
-                  onClick={() => void browseTo('')}
-                  className={`font-semibold hover:text-violet-700 ${
-                    browsePrefix === '' ? 'text-violet-700' : ''
-                  }`}
-                >
-                  root
-                </button>
+            <Separator />
 
-                {browseBreadcrumbs.map((segment, index) => (
-                  <span key={segment.prefix} className="contents">
-                    <span>/</span>
+            <TabsContent value="browse" className="m-0">
+              <ScrollArea
+                className={`sidebar-scroll ${
+                  isMobile ? 'max-h-[28rem]' : 'h-[calc(100vh-270px)] min-h-[420px]'
+                }`}
+              >
+                <CardContent className="p-3.5">
+                  <nav className="mb-3 flex flex-wrap items-center gap-1 text-xs text-muted-foreground">
                     <button
                       type="button"
-                      onClick={() => void browseTo(segment.prefix)}
-                      className={`max-w-[120px] truncate hover:text-violet-700 ${
-                        index === browseBreadcrumbs.length - 1
-                          ? 'font-semibold text-slate-900'
-                          : ''
+                      onClick={() => void browseTo('')}
+                      className={`font-semibold hover:text-primary ${
+                        browsePrefix === '' ? 'text-primary' : ''
                       }`}
                     >
-                      {segment.name}
+                      root
                     </button>
-                  </span>
-                ))}
-              </nav>
 
-              {browseLoading ? (
-                <div className="py-4 text-center text-sm text-slate-500">Loading...</div>
-              ) : browseError ? (
-                <div className="py-2 text-sm text-rose-700">{browseError}</div>
-              ) : !browseItems.length ? (
-                <div className="py-4 text-center text-sm text-slate-400">No items found.</div>
-              ) : (
-                <ul className="m-0 grid list-none gap-0.5 p-0">
-                  {browsePrefix ? (
-                    <li>
-                      <button
-                        type="button"
-                        onClick={browseUp}
-                        className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm text-slate-600 hover:bg-slate-100"
-                      >
-                        <span>../</span>
-                      </button>
-                    </li>
-                  ) : null}
-
-                  {browseItems.map((item) => (
-                    <li key={item.key}>
-                      {item.type === 'directory' ? (
+                    {browseBreadcrumbs.map((segment, index) => (
+                      <span key={segment.prefix} className="contents">
+                        <span>/</span>
                         <button
                           type="button"
-                          onClick={() => onBrowseItemClick(item)}
-                          className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm hover:bg-violet-50"
+                          onClick={() => void browseTo(segment.prefix)}
+                          className={`max-w-[120px] truncate hover:text-primary ${
+                            index === browseBreadcrumbs.length - 1
+                              ? 'font-semibold text-foreground'
+                              : ''
+                          }`}
+                          title={segment.name}
                         >
-                          <span className="truncate font-medium">{item.name}</span>
+                          {segment.name}
                         </button>
-                      ) : (
-                        <a
-                          href={toFileHref(item.key)}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-sm text-slate-700 no-underline hover:bg-slate-100"
-                        >
-                          <span className="truncate">{item.name}</span>
-                          {item.size ? (
-                            <span className="ml-auto shrink-0 text-xs text-slate-400">
-                              {item.size}
-                            </span>
-                          ) : null}
-                        </a>
-                      )}
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
-          ) : (
-            <div className="p-3.5">
-              {tocItems.length ? (
-                <ul className="m-0 grid list-none gap-1 p-0">
-                  {tocItems.map((item) => (
-                    <li key={item.id} className={item.level >= 3 ? 'pl-3' : ''}>
-                      <a
-                        href={`#${item.id}`}
-                        className={`block rounded-lg px-2 py-2 text-sm leading-relaxed no-underline hover:bg-violet-50 ${
-                          item.level >= 3 ? 'text-slate-500' : 'text-slate-900'
-                        }`}
-                      >
-                        {item.text}
-                      </a>
-                    </li>
-                  ))}
-                </ul>
-              ) : (
-                <p className="m-0 text-sm leading-relaxed text-slate-400">
-                  {tocPlaceholder}
-                </p>
-              )}
-            </div>
-          )}
-        </aside>
+                      </span>
+                    ))}
+                  </nav>
 
-        <article className="min-h-[480px] min-w-0 rounded-2xl border border-slate-300 bg-white p-5 shadow-sm">
-          {loading ? (
-            <div className="h-72 animate-pulse rounded-xl border border-slate-200 bg-slate-100" />
-          ) : !markdownContent ? (
-            <div className="rounded-xl border border-dashed border-slate-300 bg-white p-4 text-slate-600">
-              Enter a ticket ID and click <strong>Load Ticket</strong>, or browse
-              tickets in the sidebar.
-            </div>
-          ) : (
-            <div ref={viewerRef} className="markdown prose prose-slate max-w-none break-words">
-              <ReactMarkdown
-                remarkPlugins={[remarkGfm]}
-                rehypePlugins={[
-                  rehypeSlug,
-                  [
-                    rehypeAutolinkHeadings,
-                    {
-                      behavior: 'append',
-                      properties: {
-                        className: ['heading-anchor'],
-                        ariaHidden: 'true',
-                      },
-                    },
-                  ],
-                  rehypeSanitize,
-                ]}
-                components={markdownComponents}
+                  {browseLoading ? (
+                    <div className="space-y-2 py-2">
+                      <Skeleton className="h-8 w-full" />
+                      <Skeleton className="h-8 w-full" />
+                      <Skeleton className="h-8 w-full" />
+                    </div>
+                  ) : browseError ? (
+                    <Alert variant="destructive">
+                      <AlertTitle>Browse error</AlertTitle>
+                      <AlertDescription>{browseError}</AlertDescription>
+                    </Alert>
+                  ) : !browseItems.length ? (
+                    <div className="py-3 text-center text-sm text-muted-foreground">No items found.</div>
+                  ) : (
+                    <ul className="m-0 grid list-none gap-0.5 p-0">
+                      {browsePrefix ? (
+                        <li>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            onClick={browseUp}
+                            className="w-full justify-start"
+                          >
+                            ../
+                          </Button>
+                        </li>
+                      ) : null}
+
+                      {browseItems.map((item) => (
+                        <li key={item.key}>
+                          {item.type === 'directory' ? (
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => onBrowseItemClick(item)}
+                              className="w-full justify-start"
+                              title={item.name}
+                            >
+                              <FolderOpen className="size-3.5" />
+                              <span className="truncate font-medium">{item.name}</span>
+                            </Button>
+                          ) : (
+                            <a
+                              href={toFileHref(item.key)}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="flex h-8 w-full items-center gap-2 rounded-md px-2 text-sm text-foreground no-underline hover:bg-muted"
+                              title={item.name}
+                            >
+                              <FileText className="size-3.5 shrink-0" />
+                              <span className="truncate">{item.name}</span>
+                              {item.size ? (
+                                <span className="ml-auto shrink-0 text-xs text-muted-foreground">
+                                  {item.size}
+                                </span>
+                              ) : null}
+                            </a>
+                          )}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </CardContent>
+              </ScrollArea>
+            </TabsContent>
+
+            <TabsContent value="toc" className="m-0">
+              <ScrollArea
+                className={`sidebar-scroll ${
+                  isMobile ? 'max-h-[28rem]' : 'h-[calc(100vh-270px)] min-h-[420px]'
+                }`}
               >
-                {markdownContent}
-              </ReactMarkdown>
-            </div>
-          )}
-        </article>
+                <CardContent className="p-3.5">
+                  {tocItems.length ? (
+                    <ul className="m-0 grid list-none gap-1 p-0">
+                      {tocItems.map((item) => (
+                        <li key={item.id} className={item.level >= 3 ? 'pl-3' : ''}>
+                          <a
+                            href={`#${item.id}`}
+                            className={`block rounded-md px-2 py-2 text-sm leading-relaxed no-underline hover:bg-accent ${
+                              item.level >= 3 ? 'text-muted-foreground' : 'text-foreground'
+                            }`}
+                            title={item.text}
+                          >
+                            {item.text}
+                          </a>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p className="m-0 text-sm leading-relaxed text-muted-foreground">{tocPlaceholder}</p>
+                  )}
+                </CardContent>
+              </ScrollArea>
+            </TabsContent>
+          </Tabs>
+        </Card>
+
+        <Card className="min-h-[480px] min-w-0 border border-border/80 py-0 shadow-sm">
+          <CardContent className="p-5">
+            {loading ? (
+              <div className="relative overflow-hidden rounded-xl border border-border/80 bg-muted/20 p-4">
+                <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-border/80 bg-card/90 px-2.5 py-1 text-xs font-medium text-muted-foreground">
+                  <Loader2 className="size-3.5 animate-spin text-primary" />
+                  Rendering report...
+                </div>
+                <div className="space-y-3">
+                  <Skeleton className="h-9 w-2/3" />
+                  <Skeleton className="h-6 w-full" />
+                  <Skeleton className="h-6 w-5/6" />
+                  <Skeleton className="h-6 w-4/5" />
+                  <Skeleton className="h-44 w-full" />
+                </div>
+              </div>
+            ) : !markdownContent ? (
+              <Alert>
+                <AlertTitle>No report loaded</AlertTitle>
+                <AlertDescription>
+                  Enter a ticket ID and click <strong>Load Ticket</strong>, or browse tickets in the
+                  sidebar.
+                </AlertDescription>
+              </Alert>
+            ) : (
+              <div ref={viewerRef} className="markdown prose prose-slate max-w-none break-words">
+                <ReactMarkdown
+                  remarkPlugins={[remarkGfm]}
+                  rehypePlugins={[
+                    rehypeSlug,
+                    [
+                      rehypeAutolinkHeadings,
+                      {
+                        behavior: 'append',
+                        properties: {
+                          className: ['heading-anchor'],
+                          ariaHidden: 'true',
+                        },
+                      },
+                    ],
+                    rehypeSanitize,
+                  ]}
+                  components={markdownComponents}
+                >
+                  {markdownContent}
+                </ReactMarkdown>
+              </div>
+            )}
+          </CardContent>
+        </Card>
       </section>
+
+      <CommandDialog open={isCommandOpen} onOpenChange={setIsCommandOpen}>
+        <Command>
+          <CommandInput placeholder="Search actions or sections..." />
+          <CommandList>
+            <CommandEmpty>No matching command.</CommandEmpty>
+
+            <CommandGroup heading="Actions">
+              <CommandItem value="load-ticket" onSelect={loadTicketFromCommand}>
+                <FileText className="size-4" />
+                Load ticket
+                <CommandShortcut>{resolveTicketForCommand(slugInput, currentSlug) || 'N/A'}</CommandShortcut>
+              </CommandItem>
+            </CommandGroup>
+
+            <CommandSeparator />
+
+            <CommandGroup heading="Navigation">
+              <CommandItem
+                value="switch-browse"
+                onSelect={() => {
+                  setSidebarTab('browse')
+                  setIsCommandOpen(false)
+                }}
+              >
+                <FolderOpen className="size-4" />
+                Switch to Browse
+              </CommandItem>
+              <CommandItem
+                value="switch-contents"
+                onSelect={() => {
+                  setSidebarTab('toc')
+                  setIsCommandOpen(false)
+                }}
+              >
+                <ListTree className="size-4" />
+                Switch to Contents
+              </CommandItem>
+            </CommandGroup>
+
+            {tocItems.length ? <CommandSeparator /> : null}
+            {tocItems.length ? (
+              <CommandGroup heading="Sections">
+                {tocItems.map((item) => (
+                  <CommandItem
+                    key={item.id}
+                    value={`section-${item.text}`}
+                    onSelect={() => {
+                      const target = document.getElementById(item.id)
+                      target?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+                      window.location.hash = item.id
+                      setIsCommandOpen(false)
+                    }}
+                  >
+                    <ListTree className="size-4" />
+                    {item.text}
+                  </CommandItem>
+                ))}
+              </CommandGroup>
+            ) : null}
+          </CommandList>
+        </Command>
+      </CommandDialog>
+
+      {shareToast ? (
+        <div
+          role="status"
+          aria-live="polite"
+          className={`fixed right-4 bottom-4 z-50 flex max-w-sm items-start gap-2 rounded-xl border px-3.5 py-3 text-sm shadow-lg ${
+            shareToast.type === 'success'
+              ? 'border-emerald-300 bg-emerald-50 text-emerald-900'
+              : 'border-rose-300 bg-rose-50 text-rose-900'
+          }`}
+        >
+          {shareToast.type === 'success' ? (
+            <CheckCircle2 className="mt-0.5 size-4 shrink-0" />
+          ) : (
+            <AlertCircle className="mt-0.5 size-4 shrink-0" />
+          )}
+          <span>{shareToast.message}</span>
+        </div>
+      ) : null}
     </main>
   )
 }

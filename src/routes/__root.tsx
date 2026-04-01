@@ -1,6 +1,7 @@
 import { HeadContent, Scripts, createRootRoute } from '@tanstack/react-router'
 import { TanStackRouterDevtoolsPanel } from '@tanstack/react-router-devtools'
 import { TanStackDevtools } from '@tanstack/react-devtools'
+import { TooltipProvider } from '#/components/ui/tooltip'
 import '../styles.css'
 
 export const Route = createRootRoute({
@@ -16,12 +17,12 @@ export const Route = createRootRoute({
 
 function RootDocument({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en">
+    <html lang="en" prefix="og: https://ogp.me/ns#">
       <head>
         <HeadContent />
       </head>
       <body className="bg-slate-100 text-slate-900 antialiased">
-        {children}
+        <TooltipProvider delay={120}>{children}</TooltipProvider>
         <TanStackDevtools
           config={{ position: 'bottom-right' }}
           plugins={[
