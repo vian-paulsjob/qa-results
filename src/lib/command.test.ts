@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest'
-import { isCommandPaletteShortcut, resolveTicketForCommand } from './command'
+import {
+  extractTicketFromCommandQuery,
+  isCommandPaletteShortcut,
+  resolveTicketForCommand,
+} from './command'
 
 describe('command helpers', () => {
   it('accepts ctrl/cmd + k keyboard shortcut', () => {
@@ -24,5 +28,11 @@ describe('command helpers', () => {
     expect(resolveTicketForCommand('mamas-7300', 'MAMAS-7200')).toBe('MAMAS-7300')
     expect(resolveTicketForCommand('   ', 'MAMAS-7200')).toBe('MAMAS-7200')
     expect(resolveTicketForCommand('   ', '')).toBe('')
+  })
+
+  it('extracts a ticket id from command query text', () => {
+    expect(extractTicketFromCommandQuery('load mamas-7348')).toBe('MAMAS-7348')
+    expect(extractTicketFromCommandQuery('MAMAS_ABC-12 details')).toBe('MAMAS_ABC-12')
+    expect(extractTicketFromCommandQuery('switch to contents')).toBe('')
   })
 })

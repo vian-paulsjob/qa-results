@@ -15,3 +15,9 @@ export function resolveTicketForCommand(inputValue: string, currentTicket: strin
   }
   return (currentTicket || '').trim().toUpperCase()
 }
+
+export function extractTicketFromCommandQuery(query: string) {
+  const normalized = (query || '').toUpperCase()
+  const match = normalized.match(/\b[A-Z][A-Z0-9_]*-\d+\b/)
+  return match ? match[0] : ''
+}
