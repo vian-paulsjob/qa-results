@@ -31,9 +31,6 @@ function isPublicMetadataPath(pathname: string) {
   if (pathname === '/favicon.ico') {
     return true
   }
-  if (pathname.startsWith('/share/')) {
-    return true
-  }
   return false
 }
 

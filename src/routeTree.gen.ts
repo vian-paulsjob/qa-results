@@ -11,8 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as AboutRouteImport } from './routes/about'
 import { Route as IndexRouteImport } from './routes/index'
-import { Route as ShareTokenRouteImport } from './routes/share.$token'
-import { Route as ApiShareLinkRouteImport } from './routes/api/share-link'
+import { Route as ApiUploadTicketRouteImport } from './routes/api/upload-ticket'
 import { Route as ApiReportRouteImport } from './routes/api/report'
 import { Route as ApiHealthRouteImport } from './routes/api/health'
 import { Route as ApiFileRouteImport } from './routes/api/file'
@@ -28,14 +27,9 @@ const IndexRoute = IndexRouteImport.update({
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ShareTokenRoute = ShareTokenRouteImport.update({
-  id: '/share/$token',
-  path: '/share/$token',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ApiShareLinkRoute = ApiShareLinkRouteImport.update({
-  id: '/api/share-link',
-  path: '/api/share-link',
+const ApiUploadTicketRoute = ApiUploadTicketRouteImport.update({
+  id: '/api/upload-ticket',
+  path: '/api/upload-ticket',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiReportRoute = ApiReportRouteImport.update({
@@ -66,8 +60,7 @@ export interface FileRoutesByFullPath {
   '/api/file': typeof ApiFileRoute
   '/api/health': typeof ApiHealthRoute
   '/api/report': typeof ApiReportRoute
-  '/api/share-link': typeof ApiShareLinkRoute
-  '/share/$token': typeof ShareTokenRoute
+  '/api/upload-ticket': typeof ApiUploadTicketRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -76,8 +69,7 @@ export interface FileRoutesByTo {
   '/api/file': typeof ApiFileRoute
   '/api/health': typeof ApiHealthRoute
   '/api/report': typeof ApiReportRoute
-  '/api/share-link': typeof ApiShareLinkRoute
-  '/share/$token': typeof ShareTokenRoute
+  '/api/upload-ticket': typeof ApiUploadTicketRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -87,8 +79,7 @@ export interface FileRoutesById {
   '/api/file': typeof ApiFileRoute
   '/api/health': typeof ApiHealthRoute
   '/api/report': typeof ApiReportRoute
-  '/api/share-link': typeof ApiShareLinkRoute
-  '/share/$token': typeof ShareTokenRoute
+  '/api/upload-ticket': typeof ApiUploadTicketRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -99,8 +90,7 @@ export interface FileRouteTypes {
     | '/api/file'
     | '/api/health'
     | '/api/report'
-    | '/api/share-link'
-    | '/share/$token'
+    | '/api/upload-ticket'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -109,8 +99,7 @@ export interface FileRouteTypes {
     | '/api/file'
     | '/api/health'
     | '/api/report'
-    | '/api/share-link'
-    | '/share/$token'
+    | '/api/upload-ticket'
   id:
     | '__root__'
     | '/'
@@ -119,8 +108,7 @@ export interface FileRouteTypes {
     | '/api/file'
     | '/api/health'
     | '/api/report'
-    | '/api/share-link'
-    | '/share/$token'
+    | '/api/upload-ticket'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -130,8 +118,7 @@ export interface RootRouteChildren {
   ApiFileRoute: typeof ApiFileRoute
   ApiHealthRoute: typeof ApiHealthRoute
   ApiReportRoute: typeof ApiReportRoute
-  ApiShareLinkRoute: typeof ApiShareLinkRoute
-  ShareTokenRoute: typeof ShareTokenRoute
+  ApiUploadTicketRoute: typeof ApiUploadTicketRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -150,18 +137,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/share/$token': {
-      id: '/share/$token'
-      path: '/share/$token'
-      fullPath: '/share/$token'
-      preLoaderRoute: typeof ShareTokenRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/share-link': {
-      id: '/api/share-link'
-      path: '/api/share-link'
-      fullPath: '/api/share-link'
-      preLoaderRoute: typeof ApiShareLinkRouteImport
+    '/api/upload-ticket': {
+      id: '/api/upload-ticket'
+      path: '/api/upload-ticket'
+      fullPath: '/api/upload-ticket'
+      preLoaderRoute: typeof ApiUploadTicketRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/report': {
@@ -202,8 +182,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiFileRoute: ApiFileRoute,
   ApiHealthRoute: ApiHealthRoute,
   ApiReportRoute: ApiReportRoute,
-  ApiShareLinkRoute: ApiShareLinkRoute,
-  ShareTokenRoute: ShareTokenRoute,
+  ApiUploadTicketRoute: ApiUploadTicketRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

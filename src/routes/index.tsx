@@ -1,14 +1,12 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { Children, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import {
-  AlertCircle,
   CheckCircle2,
   Command as CommandIcon,
   FileText,
   FolderOpen,
   ListTree,
   Loader2,
-  Share2,
 } from 'lucide-react'
 import ReactMarkdown, { type Components } from 'react-markdown'
 import rehypeAutolinkHeadings from 'rehype-autolink-headings'
@@ -301,10 +299,7 @@ function App() {
   const [browseError, setBrowseError] = useState('')
 
   const [isCommandOpen, setIsCommandOpen] = useState(false)
-  const [shareLinkLoading, setShareLinkLoading] = useState(false)
-  const [shareToast, setShareToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null)
   const [isMobile, setIsMobile] = useState(false)
-  const shareToastTimerRef = useRef<number | null>(null)
   const viewerRef = useRef<HTMLDivElement | null>(null)
 
   const pageTitle = currentSlug ? `QA Test Result - ${currentSlug}` : 'QA Test Result'
@@ -324,14 +319,6 @@ function App() {
     onResize()
     window.addEventListener('resize', onResize)
     return () => window.removeEventListener('resize', onResize)
-  }, [])
-
-  useEffect(() => {
-    return () => {
-      if (shareToastTimerRef.current) {
-        window.clearTimeout(shareToastTimerRef.current)
-      }
-    }
   }, [])
 
   useEffect(() => {
@@ -565,45 +552,6 @@ function App() {
     setIsCommandOpen(false)
   }
 
-  function showShareToast(type: 'success' | 'error', message: string) {
-    setShareToast({ type, message })
-    if (shareToastTimerRef.current) {
-      window.clearTimeout(shareToastTimerRef.current)
-    }
-    shareToastTimerRef.current = window.setTimeout(() => {
-      setShareToast(null)
-    }, 3200)
-  }
-
-  async function copyShareLink() {
-    const ticket = currentSlug || normalizeSlug(slugInput)
-    if (!ticket) {
-      setStatus('No ticket to share. Enter a ticket ID first.', true)
-      return
-    }
-
-    setShareLinkLoading(true)
-    try {
-      const payload = await fetchJson<{ shareUrl: string; expiresAt: string }>(
-        `/api/share-link?ticket=${encodeURIComponent(ticket)}&version=${encodeURIComponent(selectedReportVersion)}`,
-      )
-
-      try {
-        await navigator.clipboard.writeText(payload.shareUrl)
-        setStatus(`Share link copied. Expires at ${new Date(payload.expiresAt).toLocaleString()}.`)
-        showShareToast('success', 'Share link copied to clipboard.')
-      } catch {
-        setStatus(`Share link: ${payload.shareUrl}`)
-        showShareToast('error', 'Clipboard access denied. Share link shown in status text.')
-      }
-    } catch (error) {
-      setStatus(`Unable to create share link (${(error as Error).message}).`, true)
-      showShareToast('error', 'Unable to create share link.')
-    } finally {
-      setShareLinkLoading(false)
-    }
-  }
-
   return (
     <main className="mx-auto max-w-screen-xl px-5 py-6">
       <Card className="border border-border/80 bg-card/95 py-0 shadow-sm">
@@ -712,17 +660,6 @@ function App() {
             >
               <CommandIcon className="mr-1.5 size-4" />
               Command
-            </Button>
-
-            <Button
-              type="button"
-              variant="secondary"
-              className="h-11"
-              disabled={shareLinkLoading}
-              onClick={() => void copyShareLink()}
-            >
-              {shareLinkLoading ? <Loader2 className="mr-1.5 size-4 animate-spin" /> : <Share2 className="mr-1.5 size-4" />}
-              Copy Share Link
             </Button>
           </form>
 
@@ -1037,25 +974,6 @@ function App() {
           </CommandList>
         </Command>
       </CommandDialog>
-
-      {shareToast ? (
-        <div
-          role="status"
-          aria-live="polite"
-          className={`fixed right-4 bottom-4 z-50 flex max-w-sm items-start gap-2 rounded-xl border px-3.5 py-3 text-sm shadow-lg ${
-            shareToast.type === 'success'
-              ? 'border-emerald-300 bg-emerald-50 text-emerald-900'
-              : 'border-rose-300 bg-rose-50 text-rose-900'
-          }`}
-        >
-          {shareToast.type === 'success' ? (
-            <CheckCircle2 className="mt-0.5 size-4 shrink-0" />
-          ) : (
-            <AlertCircle className="mt-0.5 size-4 shrink-0" />
-          )}
-          <span>{shareToast.message}</span>
-        </div>
-      ) : null}
     </main>
   )
 }
