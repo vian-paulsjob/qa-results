@@ -39,7 +39,11 @@ import {
 import { Separator } from '#/components/ui/separator'
 import { Skeleton } from '#/components/ui/skeleton'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '#/components/ui/tabs'
-import { isCommandPaletteShortcut, resolveTicketForCommand } from '#/lib/command'
+import {
+  extractTicketFromCommandQuery,
+  isCommandPaletteShortcut,
+  resolveTicketForCommand,
+} from '#/lib/command'
 import {
   buildOgMetadata,
   DEFAULT_OG_DESCRIPTION,
@@ -299,6 +303,7 @@ function App() {
   const [browseError, setBrowseError] = useState('')
 
   const [isCommandOpen, setIsCommandOpen] = useState(false)
+  const [commandQuery, setCommandQuery] = useState('')
   const [isMobile, setIsMobile] = useState(false)
   const viewerRef = useRef<HTMLDivElement | null>(null)
 
@@ -309,6 +314,10 @@ function App() {
   )
   const selectedVersionText = selectedVersionOption?.versionText || selectedReportVersion || 'v1'
   const selectedVersionUpdatedText = selectedVersionOption?.updatedText || 'Unknown'
+  const commandQueryTicket = useMemo(
+    () => extractTicketFromCommandQuery(commandQuery),
+    [commandQuery],
+  )
 
   useEffect(() => {
     document.title = pageTitle
@@ -344,6 +353,12 @@ function App() {
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [])
+
+  useEffect(() => {
+    if (!isCommandOpen) {
+      setCommandQuery('')
+    }
+  }, [isCommandOpen])
 
   const browseBreadcrumbs = useMemo(() => {
     if (!browsePrefix) return []
@@ -540,7 +555,10 @@ function App() {
   }
 
   function loadTicketFromCommand() {
-    const resolvedTicket = resolveTicketForCommand(slugInput, currentSlug)
+    const resolvedTicket = resolveTicketForCommand(
+      commandQueryTicket || slugInput,
+      currentSlug,
+    )
     if (!resolvedTicket) {
       setStatus('No ticket to load. Enter a ticket ID first.', true)
       setIsCommandOpen(false)
@@ -914,15 +932,24 @@ function App() {
 
       <CommandDialog open={isCommandOpen} onOpenChange={setIsCommandOpen}>
         <Command>
-          <CommandInput placeholder="Search actions or sections..." />
+          <CommandInput
+            placeholder="Search actions/sections, or type ticket (e.g. MAMAS-7348)..."
+            value={commandQuery}
+            onValueChange={setCommandQuery}
+          />
           <CommandList>
             <CommandEmpty>No matching command.</CommandEmpty>
 
             <CommandGroup heading="Actions">
-              <CommandItem value="load-ticket" onSelect={loadTicketFromCommand}>
+              <CommandItem
+                value={commandQueryTicket ? `load-ticket ${commandQueryTicket}` : 'load-ticket'}
+                onSelect={loadTicketFromCommand}
+              >
                 <FileText className="size-4" />
                 Load ticket
-                <CommandShortcut>{resolveTicketForCommand(slugInput, currentSlug) || 'N/A'}</CommandShortcut>
+                <CommandShortcut>
+                  {resolveTicketForCommand(commandQueryTicket || slugInput, currentSlug) || 'N/A'}
+                </CommandShortcut>
               </CommandItem>
             </CommandGroup>
 
