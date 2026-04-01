@@ -1,0 +1,40 @@
+substitutions:
+  _SERVICE: qa-results
+  _REGION: europe-west10
+  _REGISTRY: docker
+  _IMAGE: ${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REGISTRY}/${_SERVICE}
+  _SERVICE_ACCOUNT: qa-results@${PROJECT_ID}.iam.gserviceaccount.com
+  _BUILD_SERVICE_ACCOUNT: projects/${PROJECT_ID}/serviceAccounts/builder@${PROJECT_ID}.iam.gserviceaccount.com
+  _BUCKET: oracle_results
+  _BASIC_AUTH_USERNAME_SECRET: qa-results-basic-auth-username
+  _BASIC_AUTH_PASSWORD_SECRET: qa-results-basic-auth-password
+
+steps:
+  - name: gcr.io/cloud-builders/gcloud
+    script: |
+      #!/bin/bash
+      set -euo pipefail
+
+      sed -i "s|{{PROJECT_ID}}|${PROJECT_ID}|g" ci/*.yaml
+      sed -i "s|{{_REGION}}|${_REGION}|g" ci/*.yaml
+      sed -i "s|{{_IMAGE}}|${_IMAGE}|g" ci/*.yaml
+      sed -i "s|{{_SERVICE}}|${_SERVICE}|g" ci/*.yaml
+      sed -i "s|{{_SERVICE_ACCOUNT}}|${_SERVICE_ACCOUNT}|g" ci/*.yaml
+      sed -i "s|{{_BUILD_SERVICE_ACCOUNT}}|${_BUILD_SERVICE_ACCOUNT}|g" ci/*.yaml
+      sed -i "s|{{_BUCKET}}|${_BUCKET}|g" ci/*.yaml
+      sed -i "s|{{_BASIC_AUTH_USERNAME_SECRET}}|${_BASIC_AUTH_USERNAME_SECRET}|g" ci/*.yaml
+      sed -i "s|{{_BASIC_AUTH_PASSWORD_SECRET}}|${_BASIC_AUTH_PASSWORD_SECRET}|g" ci/*.yaml
+
+  - name: gcr.io/k8s-skaffold/skaffold
+    entrypoint: skaffold
+    args:
+      - run
+      - --filename=ci/skaffold.yaml
+
+serviceAccount: ${_BUILD_SERVICE_ACCOUNT}
+logsBucket: ${PROJECT_ID}_cloudbuild
+
+options:
+  dynamicSubstitutions: true
+  automapSubstitutions: true
+  defaultLogsBucketBehavior: REGIONAL_USER_OWNED_BUCKET

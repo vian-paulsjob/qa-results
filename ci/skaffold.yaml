@@ -1,0 +1,20 @@
+apiVersion: skaffold/v4beta13
+kind: Config
+build:
+  googleCloudBuild:
+    projectId: "{{PROJECT_ID}}"
+    serviceAccount: "{{_BUILD_SERVICE_ACCOUNT}}"
+  artifacts:
+    - image: "{{_IMAGE}}"
+      kaniko:
+        dockerfile: ci/Dockerfile
+        useNewRun: true
+        destination:
+          - "{{_IMAGE}}:latest"
+deploy:
+  cloudrun:
+    projectid: "{{PROJECT_ID}}"
+    region: "{{_REGION}}"
+manifests:
+  rawYaml:
+    - ci/cloud-run.yaml

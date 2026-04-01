@@ -1,0 +1,81 @@
+apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  name: "{{_SERVICE}}"
+  labels:
+    app: qa-results
+    service: "{{_SERVICE}}"
+    cloud.googleapis.com/location: "{{_REGION}}"
+  annotations:
+    run.googleapis.com/launch-stage: BETA
+    run.googleapis.com/ingress: all
+    run.googleapis.com/minScale: '0'
+    run.googleapis.com/maxScale: '5'
+    run.googleapis.com/invoker-iam-disabled: 'true'
+spec:
+  template:
+    metadata:
+      labels:
+        run.googleapis.com/startupProbeType: Custom
+      annotations:
+        run.googleapis.com/cpu-throttling: 'true'
+        run.googleapis.com/startup-cpu-boost: 'true'
+        run.googleapis.com/execution-environment: gen2
+        autoscaling.knative.dev/maxScale: '5'
+    spec:
+      containerConcurrency: 80
+      timeoutSeconds: 120
+      serviceAccountName: "{{_SERVICE_ACCOUNT}}"
+      containers:
+        - name: "{{_SERVICE}}"
+          image: "{{_IMAGE}}"
+          ports:
+            - name: http1
+              containerPort: 3000
+          env:
+            - name: NODE_ENV
+              value: "production"
+            - name: CASES_DIR
+              value: "/data"
+            - name: BASIC_AUTH_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: "{{_BASIC_AUTH_USERNAME_SECRET}}"
+                  key: latest
+            - name: BASIC_AUTH_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: "{{_BASIC_AUTH_PASSWORD_SECRET}}"
+                  key: latest
+          resources:
+            limits:
+              cpu: 1000m
+              memory: 512Mi
+          volumeMounts:
+            - name: cases-volume
+              mountPath: /data
+              readOnly: true
+          livenessProbe:
+            timeoutSeconds: 10
+            periodSeconds: 10
+            failureThreshold: 3
+            httpGet:
+              path: /api/health
+              port: 3000
+          startupProbe:
+            timeoutSeconds: 10
+            periodSeconds: 10
+            failureThreshold: 3
+            httpGet:
+              path: /api/health
+              port: 3000
+      volumes:
+        - name: cases-volume
+          csi:
+            driver: gcsfuse.run.googleapis.com
+            readOnly: true
+            volumeAttributes:
+              bucketName: "{{_BUCKET}}"
+  traffic:
+    - percent: 100
+      latestRevision: true
