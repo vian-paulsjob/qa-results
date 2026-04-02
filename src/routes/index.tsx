@@ -149,21 +149,6 @@ function formatVersionUpdatedTextForViewer(lastUpdatedMs: number) {
   }).format(lastUpdatedMs)
 }
 
-function localizeVersionOption(option: ReportVersionOption): ReportVersionOption {
-  const versionText = option.versionText || option.value
-  const updatedText = formatVersionUpdatedTextForViewer(option.lastUpdatedMs)
-  return {
-    ...option,
-    versionText,
-    updatedText,
-    label: `${versionText} • ${updatedText}`,
-  }
-}
-
-function localizeVersionOptions(options: ReportVersionOption[]) {
-  return options.map(localizeVersionOption)
-}
-
 function cleanPath(value: string) {
   return String(value || '').split(/[?#]/)[0]
 }
@@ -201,15 +186,32 @@ function isEvidenceReference(value: string) {
   )
 }
 
-function resolveEvidencePath(rawPath: string, slug: string) {
+function resolveEvidencePath(rawPath: string, reportDirectory: string, slug: string) {
   const trimmed = rawPath.trim()
   if (/^https?:\/\//i.test(trimmed)) {
     return trimmed
   }
-  if (slug && !trimmed.startsWith(`${slug}/`)) {
-    return `${slug}/${trimmed}`
+
+  const normalized = trimmed.replace(/^\.\/+/, '')
+  const ticketRoot = reportDirectory.split('/')[0] || slug
+
+  if (normalized.startsWith(`${reportDirectory}/`)) {
+    return normalized
   }
-  return trimmed
+
+  if (ticketRoot && normalized.startsWith(`${ticketRoot}/`)) {
+    return normalized
+  }
+
+  if (reportDirectory) {
+    return `${reportDirectory}/${normalized}`
+  }
+
+  if (slug && !normalized.startsWith(`${slug}/`)) {
+    return `${slug}/${normalized}`
+  }
+
+  return normalized
 }
 
 function toFileHref(relativePath: string) {
@@ -309,6 +311,7 @@ function App() {
   const [loading, setLoading] = useState(false)
   const [markdownContent, setMarkdownContent] = useState('')
   const [currentSlug, setCurrentSlug] = useState('')
+  const [currentReportDirectory, setCurrentReportDirectory] = useState('')
   const [tocItems, setTocItems] = useState<TocItem[]>([])
   const [tocPlaceholder, setTocPlaceholder] = useState(
     'Load a ticket to generate the section index.',
@@ -342,7 +345,9 @@ function App() {
     [reportVersions, selectedReportVersion],
   )
   const selectedVersionText = selectedVersionOption?.versionText || selectedReportVersion || 'v1'
-  const selectedVersionUpdatedText = selectedVersionOption?.updatedText || 'Unknown'
+  const selectedVersionUpdatedText = formatVersionUpdatedTextForViewer(
+    selectedVersionOption?.lastUpdatedMs ?? 0,
+  )
   const commandQueryTicket = useMemo(
     () => extractTicketFromCommandQuery(commandQuery),
     [commandQuery],
@@ -456,7 +461,7 @@ function App() {
         const hrefText = String(href || '')
 
         if (isEvidenceReference(hrefText)) {
-          const resolved = resolveEvidencePath(hrefText, currentSlug)
+          const resolved = resolveEvidencePath(hrefText, currentReportDirectory, currentSlug)
           return <EvidenceNode sourcePath={toFileHref(resolved)} label={hrefText} />
         }
 
@@ -478,7 +483,7 @@ function App() {
         const text = textFromNode(children).trim()
 
         if (text && !text.includes('\n') && isEvidenceReference(text)) {
-          const resolved = resolveEvidencePath(text, currentSlug)
+          const resolved = resolveEvidencePath(text, currentReportDirectory, currentSlug)
           return <EvidenceNode sourcePath={toFileHref(resolved)} label={text} />
         }
 
@@ -489,7 +494,7 @@ function App() {
         )
       },
     }),
-    [currentSlug],
+    [currentReportDirectory, currentSlug],
   )
 
   async function loadTicket(ticketRaw: string, requestedVersion = '') {
@@ -498,12 +503,14 @@ function App() {
     if (!/^[A-Z0-9_-]+$/.test(ticket)) {
       setStatus('Invalid ticket. Use letters, numbers, underscore, or dash.', true)
       setCurrentSlug('')
+      setCurrentReportDirectory('')
       setMarkdownContent('')
       setTocItems([])
       return
     }
 
     setCurrentSlug(ticket)
+    setCurrentReportDirectory('')
     setLoading(true)
     setMarkdownContent('')
     setTocItems([])
@@ -515,8 +522,11 @@ function App() {
         `/api/report?ticket=${encodeURIComponent(ticket)}&version=${encodeURIComponent(requestedVersion)}`,
       )
 
-      setReportVersions(localizeVersionOptions(report.versions))
+      setReportVersions(report.versions)
       setSelectedReportVersion(report.selectedVersion)
+      setCurrentReportDirectory(
+        report.reportPath.split('/').slice(0, -1).join('/'),
+      )
       setMarkdownContent(report.markdown)
       setStatus(`Loaded ${report.reportPath}`)
       setSidebarTab('toc')
@@ -530,6 +540,7 @@ function App() {
       }
       window.history.replaceState({}, '', url.toString())
     } catch (error) {
+      setCurrentReportDirectory('')
       setMarkdownContent('')
       setTocItems([])
       setTocPlaceholder('Unable to build section index.')
@@ -687,7 +698,7 @@ function App() {
                     <span className="font-semibold">{option.versionText || option.value}</span>
                     <span className="mx-1 text-muted-foreground">•</span>
                     <span className="pt-px pb-0.5 italic text-muted-foreground">
-                      {option.updatedText || 'Unknown'}
+                      {formatVersionUpdatedTextForViewer(option.lastUpdatedMs)}
                     </span>
                   </SelectItem>
                 ))}
