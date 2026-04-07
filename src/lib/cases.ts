@@ -197,6 +197,79 @@ function formatVersionUpdatedText(lastUpdatedMs: number) {
   }).format(lastUpdatedMs)
 }
 
+function sleep(ms: number) {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms)
+  })
+}
+
+async function renameWithRetry(fromPath: string, toPath: string) {
+  const maxAttempts = 6
+  let delayMs = 50
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    try {
+      await fs.rename(fromPath, toPath)
+      return
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code
+      const isRetryable = code === 'EMFILE' || code === 'ENFILE' || code === 'EBUSY'
+
+      if (!isRetryable || attempt === maxAttempts) {
+        throw error
+      }
+
+      await sleep(delayMs)
+      delayMs *= 2
+    }
+  }
+}
+
+function isRetryableFsCode(code: string | undefined) {
+  return code === 'EMFILE' || code === 'ENFILE' || code === 'EBUSY'
+}
+
+async function copyDirectoryWithRetry(fromPath: string, toPath: string) {
+  const maxAttempts = 4
+  let delayMs = 100
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    try {
+      await fs.rm(toPath, { recursive: true, force: true })
+      await fs.cp(fromPath, toPath, { recursive: true, force: false })
+      return
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code
+      if (!isRetryableFsCode(code) || attempt === maxAttempts) {
+        throw error
+      }
+
+      await sleep(delayMs)
+      delayMs *= 2
+    }
+  }
+}
+
+async function removeDirectoryWithRetry(targetPath: string) {
+  const maxAttempts = 4
+  let delayMs = 100
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    try {
+      await fs.rm(targetPath, { recursive: true, force: true })
+      return
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code
+      if (!isRetryableFsCode(code) || attempt === maxAttempts) {
+        throw error
+      }
+
+      await sleep(delayMs)
+      delayMs *= 2
+    }
+  }
+}
+
 function buildVersionOption(
   value: string,
   prefix: string,
@@ -458,7 +531,27 @@ export async function approveDraft(ticketRaw: string, casesRoot = getCasesRoot()
   const nextVersionDirectory = path.join(ticketDirectory, nextVersion)
   ensureInsideRoot(nextVersionDirectory, casesRoot)
 
-  await fs.rename(draftDirectory, nextVersionDirectory)
+  try {
+    await fs.stat(nextVersionDirectory)
+    throw new Error(`Target version already exists for ${ticket}: ${nextVersion}`)
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+      throw error
+    }
+  }
+
+  try {
+    await renameWithRetry(draftDirectory, nextVersionDirectory)
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code
+    if (!isRetryableFsCode(code)) {
+      throw error
+    }
+
+    // Fallback for filesystems where rename can continue failing under FD pressure.
+    await copyDirectoryWithRetry(draftDirectory, nextVersionDirectory)
+    await removeDirectoryWithRetry(draftDirectory)
+  }
 
   return {
     ticket,

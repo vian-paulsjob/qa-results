@@ -1,7 +1,8 @@
 import os from 'node:os'
 import path from 'node:path'
+import { promises as fs } from 'node:fs'
 import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   approveDraft,
   getReportVersions,
@@ -122,6 +123,28 @@ describe('cases helpers', () => {
     await expect(
       resolveFileForRead('MAMAS-9011/v2/evidence/screenshot.png', tempRoot),
     ).resolves.toBeDefined()
+  })
+
+  it('falls back to copy when rename keeps failing with EMFILE', async () => {
+    const ticketRoot = path.join(tempRoot, 'MAMAS-9012')
+    await mkdir(path.join(ticketRoot, 'draft'), { recursive: true })
+    await writeFile(path.join(ticketRoot, 'draft', 'test-results.md'), 'draft body', 'utf8')
+
+    const renameSpy = vi.spyOn(fs, 'rename').mockImplementation(async () => {
+      const error = new Error('too many open files') as NodeJS.ErrnoException
+      error.code = 'EMFILE'
+      throw error
+    })
+
+    try {
+      const approved = await approveDraft('MAMAS-9012', tempRoot)
+      expect(approved.version).toBe('v1')
+
+      const report = await resolveReport('MAMAS-9012', 'v1', tempRoot)
+      expect(report.markdown).toBe('draft body')
+    } finally {
+      renameSpy.mockRestore()
+    }
   })
 
   it('rejects path traversal and out-of-root paths', async () => {
