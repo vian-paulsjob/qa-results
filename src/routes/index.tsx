@@ -356,6 +356,10 @@ function App() {
     () => reportVersions.find((option) => option.value === selectedReportVersion),
     [reportVersions, selectedReportVersion],
   )
+  const hasDraftVersion = useMemo(
+    () => reportVersions.some((option) => option.isDraft),
+    [reportVersions],
+  )
   const selectedVersionText = selectedVersionOption?.versionText || selectedReportVersion || 'v1'
   const selectedVersionUpdatedText = formatVersionUpdatedTextForViewer(
     selectedVersionOption?.lastUpdatedMs ?? 0,
@@ -1042,6 +1046,20 @@ function App() {
                 Load ticket
                 <CommandShortcut>
                   {resolveTicketForCommand(commandQueryTicket || slugInput, currentSlug) || 'N/A'}
+                </CommandShortcut>
+              </CommandItem>
+              <CommandItem
+                value="approve-draft"
+                disabled={!currentSlug || !hasDraftVersion || approvalLoading}
+                onSelect={() => {
+                  setIsCommandOpen(false)
+                  void approveDraftForCurrentTicket()
+                }}
+              >
+                <CheckCircle2 className="size-4" />
+                Approve draft
+                <CommandShortcut>
+                  {!currentSlug ? 'N/A' : hasDraftVersion ? 'Ready' : 'No draft'}
                 </CommandShortcut>
               </CommandItem>
             </CommandGroup>
