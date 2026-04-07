@@ -33,7 +33,8 @@ App runs on `http://localhost:3000`.
 - `GET /api/browse?prefix=...`
 - `GET /api/report?ticket=...&version=...`
 - `GET /api/file?path=...`
-- `POST /api/upload-ticket?ticket=...&version=...` (uploads a gzipped tar archive for a ticket version)
+- `POST /api/upload-ticket?ticket=...` (uploads to `ticket/draft`, always draft-first)
+- `POST /api/approve-ticket?ticket=...` (promotes `ticket/draft` to next `vN` version)
 
 Global request middleware in `src/start.ts` enforces HTTP Basic Auth for most routes.
 Public exceptions:
