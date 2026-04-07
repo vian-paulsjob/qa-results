@@ -70,6 +70,7 @@ type ReportVersionOption = {
   lastUpdatedMs: number
   updatedText: string
   versionText: string
+  isDraft: boolean
 }
 
 type ReportResponse = {
@@ -78,6 +79,12 @@ type ReportResponse = {
   selectedVersion: string
   versions: ReportVersionOption[]
   markdown: string
+}
+
+type ApproveDraftResponse = {
+  ok: boolean
+  ticket: string
+  approvedVersion: string
 }
 
 type TocItem = {
@@ -221,8 +228,11 @@ function toFileHref(relativePath: string) {
   return `/api/file?path=${encodeURIComponent(relativePath)}`
 }
 
-async function fetchJson<T>(url: string) {
-  const response = await fetch(url, { cache: 'no-store' })
+async function fetchJson<T>(url: string, init?: RequestInit) {
+  const response = await fetch(url, {
+    cache: 'no-store',
+    ...init,
+  })
   let payload: unknown = null
 
   try {
@@ -324,9 +334,11 @@ function App() {
       lastUpdatedMs: 0,
       updatedText: 'Unknown',
       versionText: 'v1',
+      isDraft: false,
     },
   ])
   const [selectedReportVersion, setSelectedReportVersion] = useState('v1')
+  const [approvalLoading, setApprovalLoading] = useState(false)
 
   const [sidebarTab, setSidebarTab] = useState<'browse' | 'toc'>('browse')
   const [browsePrefix, setBrowsePrefix] = useState('')
@@ -550,6 +562,31 @@ function App() {
     }
   }
 
+  async function approveDraftForCurrentTicket() {
+    const ticket = currentSlug || normalizeSlug(slugInput)
+    if (!ticket) {
+      setStatus('Load a ticket before approving a draft.', true)
+      return
+    }
+
+    setApprovalLoading(true)
+    setStatus(`Approving draft for ${ticket} ...`)
+
+    try {
+      const result = await fetchJson<ApproveDraftResponse>(
+        `/api/approve-ticket?ticket=${encodeURIComponent(ticket)}`,
+        { method: 'POST' },
+      )
+
+      await loadTicket(ticket, result.approvedVersion)
+      setStatus(`Approved draft for ${ticket} as ${result.approvedVersion}.`)
+    } catch (error) {
+      setStatus(`Unable to approve draft (${(error as Error).message}).`, true)
+    } finally {
+      setApprovalLoading(false)
+    }
+  }
+
   useEffect(() => {
     if (!markdownContent || !viewerRef.current) {
       return
@@ -719,6 +756,20 @@ function App() {
               <CommandIcon className="mr-1.5 size-4" />
               Command
             </Button>
+
+            {selectedVersionOption?.isDraft ? (
+              <Button
+                type="button"
+                className="h-11 px-4 font-semibold"
+                disabled={loading || approvalLoading || !currentSlug}
+                onClick={() => {
+                  void approveDraftForCurrentTicket()
+                }}
+              >
+                {approvalLoading ? <Loader2 className="mr-1.5 size-4 animate-spin" /> : null}
+                Approve Draft
+              </Button>
+            ) : null}
           </form>
 
           <div className="flex items-center gap-2 text-xs text-muted-foreground">
@@ -730,7 +781,9 @@ function App() {
             <span className={loading ? 'animate-pulse' : ''}>
               {loading
                 ? 'Loading report and version details...'
-                : `Version ${selectedVersionText} • Last updated ${selectedVersionUpdatedText}`}
+                : selectedVersionOption?.isDraft
+                  ? `Draft pending approval • Last updated ${selectedVersionUpdatedText}`
+                  : `Version ${selectedVersionText} • Last updated ${selectedVersionUpdatedText}`}
             </span>
           </div>
 

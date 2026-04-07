@@ -23,6 +23,7 @@ export type ReportVersionOption = {
   lastUpdatedMs: number
   updatedText: string
   versionText: string
+  isDraft: boolean
 }
 
 export type ReportResolveResult = {
@@ -178,6 +179,10 @@ function parseVersionNumber(version: string) {
   return match ? Number(match[1]) : Number.NaN
 }
 
+function isVersionDirectoryName(name: string) {
+  return /^v\d+$/i.test(name)
+}
+
 function formatVersionUpdatedText(lastUpdatedMs: number) {
   if (!Number.isFinite(lastUpdatedMs) || lastUpdatedMs <= 0) {
     return 'Unknown'
@@ -192,15 +197,26 @@ function formatVersionUpdatedText(lastUpdatedMs: number) {
   }).format(lastUpdatedMs)
 }
 
-function buildVersionOption(value: string, prefix: string, lastUpdatedMs: number): ReportVersionOption {
+function buildVersionOption(
+  value: string,
+  prefix: string,
+  lastUpdatedMs: number,
+  options?: {
+    isDraft?: boolean
+    versionText?: string
+  },
+): ReportVersionOption {
+  const isDraft = options?.isDraft ?? false
+  const versionText = options?.versionText ?? value
   const updatedText = formatVersionUpdatedText(lastUpdatedMs)
   return {
     value,
     prefix,
     lastUpdatedMs,
     updatedText,
-    versionText: value,
-    label: `${value} • ${updatedText}`,
+    versionText,
+    label: `${versionText} • ${updatedText}`,
+    isDraft,
   }
 }
 
@@ -293,9 +309,11 @@ export async function getReportVersions(ticket: string, casesRoot = getCasesRoot
     return [buildVersionOption('v1', 'v1/', 0)]
   }
 
-  const versionEntries = entries.filter(
-    (entry) => entry.isDirectory() && /^v\d+$/i.test(entry.name),
+  const draftEntry = entries.find(
+    (entry) => entry.isDirectory() && entry.name.toLowerCase() === 'draft',
   )
+
+  const versionEntries = entries.filter((entry) => entry.isDirectory() && isVersionDirectoryName(entry.name))
 
   const versions = await Promise.all(
     versionEntries.map(async (entry) => {
@@ -305,7 +323,7 @@ export async function getReportVersions(ticket: string, casesRoot = getCasesRoot
     }),
   )
 
-  versions.sort((a, b) => {
+  const publishedVersions = versions.sort((a, b) => {
     const aNumber = parseVersionNumber(a.value)
     const bNumber = parseVersionNumber(b.value)
 
@@ -322,13 +340,32 @@ export async function getReportVersions(ticket: string, casesRoot = getCasesRoot
     return aNumber - bNumber
   })
 
-  if (versions.length > 0) {
-    return versions
+  const result: ReportVersionOption[] = []
+
+  if (draftEntry) {
+    const draftDirectory = path.join(ticketDirectory, draftEntry.name)
+    const draftUpdatedMs = await getDirectoryLastUpdatedMs(draftDirectory)
+    result.push(
+      buildVersionOption('draft', 'draft/', draftUpdatedMs, {
+        isDraft: true,
+        versionText: 'Draft',
+      }),
+    )
+  }
+
+  if (publishedVersions.length > 0) {
+    result.push(...publishedVersions)
+    return result
   }
 
   const legacyReport = await findBestReportFile(ticketDirectory)
   if (legacyReport) {
-    return [buildVersionOption('legacy', '', legacyReport.modifiedMs)]
+    result.push(buildVersionOption('legacy', '', legacyReport.modifiedMs))
+    return result
+  }
+
+  if (result.length > 0) {
+    return result
   }
 
   return [buildVersionOption('v1', 'v1/', 0)]
@@ -337,9 +374,15 @@ export async function getReportVersions(ticket: string, casesRoot = getCasesRoot
 export async function resolveReport(ticketRaw: string, requestedVersion: string, casesRoot = getCasesRoot()): Promise<ReportResolveResult> {
   const ticket = assertTicket(ticketRaw)
   const versions = await getReportVersions(ticket, casesRoot)
+  const draftOption = versions.find((version) => version.isDraft)
+  const latestPublishedOption = [...versions]
+    .reverse()
+    .find((version) => !version.isDraft && version.value !== 'legacy')
 
   const selectedOption =
     versions.find((version) => version.value === requestedVersion)
+    ?? draftOption
+    ?? latestPublishedOption
     ?? versions[versions.length - 1]
     ?? versions[0]
 
@@ -370,6 +413,56 @@ export async function resolveReport(ticketRaw: string, requestedVersion: string,
     selectedVersion: selectedOption.value,
     versions,
     markdown,
+  }
+}
+
+export type ApproveDraftResult = {
+  ticket: string
+  version: string
+}
+
+export async function approveDraft(ticketRaw: string, casesRoot = getCasesRoot()): Promise<ApproveDraftResult> {
+  const ticket = assertTicket(ticketRaw)
+  const ticketDirectory = path.join(casesRoot, ticket)
+  const draftDirectory = path.join(ticketDirectory, 'draft')
+  ensureInsideRoot(ticketDirectory, casesRoot)
+  ensureInsideRoot(draftDirectory, casesRoot)
+
+  let draftStat: Awaited<ReturnType<typeof fs.stat>>
+  try {
+    draftStat = await fs.stat(draftDirectory)
+  } catch {
+    throw new Error(`Draft not found for ${ticket}`)
+  }
+
+  if (!draftStat.isDirectory()) {
+    throw new Error(`Draft not found for ${ticket}`)
+  }
+
+  let entries: Awaited<ReturnType<typeof fs.readdir>>
+  try {
+    entries = await fs.readdir(ticketDirectory, { withFileTypes: true })
+  } catch {
+    entries = []
+  }
+
+  const publishedVersionNumbers = entries
+    .filter((entry) => entry.isDirectory() && isVersionDirectoryName(entry.name))
+    .map((entry) => parseVersionNumber(entry.name))
+    .filter((versionNumber) => Number.isFinite(versionNumber))
+
+  const nextVersionNumber = publishedVersionNumbers.length
+    ? Math.max(...publishedVersionNumbers) + 1
+    : 1
+  const nextVersion = `v${nextVersionNumber}`
+  const nextVersionDirectory = path.join(ticketDirectory, nextVersion)
+  ensureInsideRoot(nextVersionDirectory, casesRoot)
+
+  await fs.rename(draftDirectory, nextVersionDirectory)
+
+  return {
+    ticket,
+    version: nextVersion,
   }
 }
 

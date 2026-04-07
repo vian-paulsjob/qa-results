@@ -16,6 +16,7 @@ import { Route as ApiReportRouteImport } from './routes/api/report'
 import { Route as ApiHealthRouteImport } from './routes/api/health'
 import { Route as ApiFileRouteImport } from './routes/api/file'
 import { Route as ApiBrowseRouteImport } from './routes/api/browse'
+import { Route as ApiApproveTicketRouteImport } from './routes/api/approve-ticket'
 
 const AboutRoute = AboutRouteImport.update({
   id: '/about',
@@ -52,10 +53,16 @@ const ApiBrowseRoute = ApiBrowseRouteImport.update({
   path: '/api/browse',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiApproveTicketRoute = ApiApproveTicketRouteImport.update({
+  id: '/api/approve-ticket',
+  path: '/api/approve-ticket',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/about': typeof AboutRoute
+  '/api/approve-ticket': typeof ApiApproveTicketRoute
   '/api/browse': typeof ApiBrowseRoute
   '/api/file': typeof ApiFileRoute
   '/api/health': typeof ApiHealthRoute
@@ -65,6 +72,7 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/about': typeof AboutRoute
+  '/api/approve-ticket': typeof ApiApproveTicketRoute
   '/api/browse': typeof ApiBrowseRoute
   '/api/file': typeof ApiFileRoute
   '/api/health': typeof ApiHealthRoute
@@ -75,6 +83,7 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/about': typeof AboutRoute
+  '/api/approve-ticket': typeof ApiApproveTicketRoute
   '/api/browse': typeof ApiBrowseRoute
   '/api/file': typeof ApiFileRoute
   '/api/health': typeof ApiHealthRoute
@@ -86,6 +95,7 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/about'
+    | '/api/approve-ticket'
     | '/api/browse'
     | '/api/file'
     | '/api/health'
@@ -95,6 +105,7 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/about'
+    | '/api/approve-ticket'
     | '/api/browse'
     | '/api/file'
     | '/api/health'
@@ -104,6 +115,7 @@ export interface FileRouteTypes {
     | '__root__'
     | '/'
     | '/about'
+    | '/api/approve-ticket'
     | '/api/browse'
     | '/api/file'
     | '/api/health'
@@ -114,6 +126,7 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AboutRoute: typeof AboutRoute
+  ApiApproveTicketRoute: typeof ApiApproveTicketRoute
   ApiBrowseRoute: typeof ApiBrowseRoute
   ApiFileRoute: typeof ApiFileRoute
   ApiHealthRoute: typeof ApiHealthRoute
@@ -172,12 +185,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiBrowseRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/approve-ticket': {
+      id: '/api/approve-ticket'
+      path: '/api/approve-ticket'
+      fullPath: '/api/approve-ticket'
+      preLoaderRoute: typeof ApiApproveTicketRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AboutRoute: AboutRoute,
+  ApiApproveTicketRoute: ApiApproveTicketRoute,
   ApiBrowseRoute: ApiBrowseRoute,
   ApiFileRoute: ApiFileRoute,
   ApiHealthRoute: ApiHealthRoute,

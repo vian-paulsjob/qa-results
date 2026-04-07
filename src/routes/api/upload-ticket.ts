@@ -11,14 +11,6 @@ import { assertTicket, getCasesRoot } from '#/lib/cases'
 
 const execFileAsync = promisify(execFile)
 
-function normalizeVersion(raw: string) {
-  const normalized = (raw || '').trim()
-  if (!/^v\d+$/i.test(normalized)) {
-    throw new Error('version query parameter must be in vN format')
-  }
-  return normalized.toLowerCase()
-}
-
 function parseBooleanQuery(value: string | null) {
   if (!value) return false
   const normalized = value.trim().toLowerCase()
@@ -125,7 +117,6 @@ export const Route = createFileRoute('/api/upload-ticket')({
       POST: async ({ request }) => {
         const url = new URL(request.url)
         const ticketRaw = url.searchParams.get('ticket') ?? ''
-        const versionRaw = url.searchParams.get('version') ?? ''
         const pathRaw = url.searchParams.get('path')
         const replace = parseBooleanQuery(url.searchParams.get('replace'))
 
@@ -135,18 +126,10 @@ export const Route = createFileRoute('/api/upload-ticket')({
             { status: 400 },
           )
         }
-        if (!versionRaw.trim()) {
-          return Response.json(
-            { error: 'version query parameter is required' },
-            { status: 400 },
-          )
-        }
 
         let ticket = ''
-        let version = ''
         try {
           ticket = assertTicket(ticketRaw)
-          version = normalizeVersion(versionRaw)
         } catch (error) {
           return Response.json(
             { error: (error as Error).message },
@@ -155,18 +138,18 @@ export const Route = createFileRoute('/api/upload-ticket')({
         }
 
         const casesRoot = getCasesRoot()
-        const ticketVersionRoot = path.join(casesRoot, ticket, version)
+        const ticketDraftRoot = path.join(casesRoot, ticket, 'draft')
 
         if (pathRaw) {
           try {
             const relativePath = normalizeUploadPath(pathRaw)
-            const destinationPath = path.join(ticketVersionRoot, relativePath)
+            const destinationPath = path.join(ticketDraftRoot, relativePath)
 
-            ensureInsideRoot(ticketVersionRoot, casesRoot)
-            ensureInsideRoot(destinationPath, ticketVersionRoot)
+            ensureInsideRoot(ticketDraftRoot, casesRoot)
+            ensureInsideRoot(destinationPath, ticketDraftRoot)
 
             if (replace) {
-              await rm(ticketVersionRoot, { recursive: true, force: true })
+              await rm(ticketDraftRoot, { recursive: true, force: true })
             }
             await mkdir(path.dirname(destinationPath), { recursive: true })
 
@@ -177,10 +160,11 @@ export const Route = createFileRoute('/api/upload-ticket')({
               {
                 ok: true,
                 ticket,
-                version,
+                version: 'draft',
                 path: relativePath,
                 uploadedFiles: 1,
                 replaced: replace,
+                status: 'draft',
               },
               {
                 headers: {
@@ -212,13 +196,13 @@ export const Route = createFileRoute('/api/upload-ticket')({
             throw new Error('Archive does not contain any files')
           }
 
-          await rm(ticketVersionRoot, { recursive: true, force: true })
-          await mkdir(ticketVersionRoot, { recursive: true })
-          ensureInsideRoot(ticketVersionRoot, casesRoot)
+          await rm(ticketDraftRoot, { recursive: true, force: true })
+          await mkdir(ticketDraftRoot, { recursive: true })
+          ensureInsideRoot(ticketDraftRoot, casesRoot)
 
           for (const entry of entries) {
-            const destinationPath = path.join(ticketVersionRoot, entry)
-            ensureInsideRoot(destinationPath, ticketVersionRoot)
+            const destinationPath = path.join(ticketDraftRoot, entry)
+            ensureInsideRoot(destinationPath, ticketDraftRoot)
             await mkdir(path.dirname(destinationPath), { recursive: true })
 
             const content = await extractArchiveEntry(archivePath, entry)
@@ -229,8 +213,9 @@ export const Route = createFileRoute('/api/upload-ticket')({
             {
               ok: true,
               ticket,
-              version,
+              version: 'draft',
               uploadedFiles: entries.length,
+              status: 'draft',
             },
             {
               headers: {

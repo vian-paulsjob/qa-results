@@ -3,6 +3,7 @@ import path from 'node:path'
 import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import {
+  approveDraft,
   getReportVersions,
   listBrowseItems,
   normalizeFilePath,
@@ -81,6 +82,46 @@ describe('cases helpers', () => {
     expect(versions[0].lastUpdatedMs).toBeGreaterThan(0)
     expect(versions[0].updatedText).not.toBe('Unknown')
     expect(versions[0].label).toMatch(/^v1 • /)
+  })
+
+  it('prefers draft when resolving report without explicit version', async () => {
+    const ticketRoot = path.join(tempRoot, 'MAMAS-9010')
+    await mkdir(path.join(ticketRoot, 'v1'), { recursive: true })
+    await mkdir(path.join(ticketRoot, 'draft'), { recursive: true })
+    await writeFile(path.join(ticketRoot, 'v1', 'test-results.md'), 'published body', 'utf8')
+    await writeFile(path.join(ticketRoot, 'draft', 'test-results.md'), 'draft body', 'utf8')
+
+    const report = await resolveReport('MAMAS-9010', '', tempRoot)
+
+    expect(report.selectedVersion).toBe('draft')
+    expect(report.reportPath).toBe('MAMAS-9010/draft/test-results.md')
+    expect(report.markdown).toBe('draft body')
+  })
+
+  it('approves draft into next version and removes draft folder', async () => {
+    const ticketRoot = path.join(tempRoot, 'MAMAS-9011')
+    await mkdir(path.join(ticketRoot, 'v1'), { recursive: true })
+    await mkdir(path.join(ticketRoot, 'draft', 'evidence'), { recursive: true })
+    await writeFile(path.join(ticketRoot, 'v1', 'test-results.md'), 'v1 body', 'utf8')
+    await writeFile(path.join(ticketRoot, 'draft', 'test-results.md'), 'draft body', 'utf8')
+    await writeFile(
+      path.join(ticketRoot, 'draft', 'evidence', 'screenshot.png'),
+      'image',
+      'utf8',
+    )
+
+    const approved = await approveDraft('MAMAS-9011', tempRoot)
+
+    expect(approved.version).toBe('v2')
+    await expect(
+      resolveFileForRead('MAMAS-9011/draft/test-results.md', tempRoot),
+    ).rejects.toThrow()
+
+    const report = await resolveReport('MAMAS-9011', 'v2', tempRoot)
+    expect(report.markdown).toBe('draft body')
+    await expect(
+      resolveFileForRead('MAMAS-9011/v2/evidence/screenshot.png', tempRoot),
+    ).resolves.toBeDefined()
   })
 
   it('rejects path traversal and out-of-root paths', async () => {
