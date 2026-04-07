@@ -687,7 +687,7 @@ function App() {
                 align="start"
                 sideOffset={8}
                 alignItemWithTrigger={false}
-                className="min-w-[20rem] rounded-xl p-1.5"
+                className="min-w-[20rem] max-h-[15.75rem] rounded-xl p-1.5"
               >
                 {reportVersions.map((option) => (
                   <SelectItem
