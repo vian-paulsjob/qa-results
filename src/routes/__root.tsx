@@ -1,6 +1,7 @@
 import { HeadContent, Scripts, createRootRoute } from '@tanstack/react-router'
 import { TanStackRouterDevtoolsPanel } from '@tanstack/react-router-devtools'
 import { TanStackDevtools } from '@tanstack/react-devtools'
+import ThemeToggle from '#/components/ThemeToggle'
 import { TooltipProvider } from '#/components/ui/tooltip'
 import '../styles.css'
 
@@ -20,9 +21,20 @@ function RootDocument({ children }: { children: React.ReactNode }) {
     <html lang="en" prefix="og: https://ogp.me/ns#">
       <head>
         <HeadContent />
+        <script
+          dangerouslySetInnerHTML={{
+            __html:
+              "(function(){try{var t=localStorage.getItem('theme');var p=window.matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';var m=(t==='dark'||t==='light')?t:p;document.documentElement.classList.toggle('dark',m==='dark');document.documentElement.style.colorScheme=m;}catch(e){}})();",
+          }}
+        />
       </head>
-      <body className="bg-slate-100 text-slate-900 antialiased">
-        <TooltipProvider delay={120}>{children}</TooltipProvider>
+      <body className="bg-background text-foreground antialiased">
+        <TooltipProvider delay={120}>
+          <div className="fixed top-4 right-4 z-[60]">
+            <ThemeToggle />
+          </div>
+          {children}
+        </TooltipProvider>
         <TanStackDevtools
           config={{ position: 'bottom-right' }}
           plugins={[

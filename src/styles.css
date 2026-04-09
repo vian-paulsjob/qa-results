@@ -206,6 +206,31 @@
   word-break: break-word;
 }
 
+.dark .markdown img {
+  border-color: #334155;
+}
+
+.dark .markdown :not(pre) > code {
+  border-color: #334155;
+  background: #0f172a;
+  color: #e2e8f0;
+}
+
+.dark .markdown pre {
+  border-color: #334155;
+  background: #020817;
+  color: #e2e8f0;
+}
+
+.dark .markdown table {
+  border-color: #334155;
+}
+
+.dark .markdown th,
+.dark .markdown td {
+  border-color: #334155;
+}
+
 .sidebar-scroll {
   scrollbar-gutter: stable;
   scrollbar-width: thin;

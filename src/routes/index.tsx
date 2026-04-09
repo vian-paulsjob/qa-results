@@ -2314,7 +2314,7 @@ function App() {
                 </AlertDescription>
               </Alert>
             ) : (
-              <div ref={viewerRef} className="markdown prose prose-slate max-w-none break-words">
+              <div ref={viewerRef} className="markdown prose prose-slate dark:prose-invert max-w-none break-words">
                 <ReactMarkdown
                   remarkPlugins={[remarkGfm]}
                   rehypePlugins={[
