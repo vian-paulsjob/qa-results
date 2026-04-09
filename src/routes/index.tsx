@@ -1,12 +1,22 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { Children, Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import {
+  ArrowDownUp,
   CheckCircle2,
+  CircleX,
+  Clock,
   Command as CommandIcon,
+  Copy,
+  ExternalLink,
+  FileCode2,
   FileText,
+  FlaskConical,
   FolderOpen,
   ListTree,
   Loader2,
+  Network,
+  Scale,
+  ShieldCheck,
 } from 'lucide-react'
 import ReactMarkdown, { type Components } from 'react-markdown'
 import rehypeAutolinkHeadings from 'rehype-autolink-headings'
@@ -301,6 +311,153 @@ function normalizeObject(value: unknown) {
     return null
   }
   return value as Record<string, unknown>
+}
+
+type NewmanHeader = { key: string; value: string; system?: boolean }
+type NewmanAssertion = { assertion: string; skipped: boolean; error?: { message: string } }
+
+type ParsedNewmanEvidence = {
+  testName: string
+  method: string
+  fullUrl: string
+  requestHeaders: NewmanHeader[]
+  requestBody: string
+  requestBodyParsed: unknown | null
+  responseCode: number
+  responseStatus: string
+  responseHeaders: NewmanHeader[]
+  responseBody: string
+  responseBodyParsed: unknown | null
+  responseTime: number
+  responseSize: number
+  assertions: NewmanAssertion[]
+  testScripts: string[]
+}
+
+function isNewmanFormat(parsed: unknown): boolean {
+  const record = normalizeObject(parsed)
+  if (!record) return false
+  const response = normalizeObject(record.response)
+  if (!response) return false
+  return (
+    'cursor' in record &&
+    'item' in record &&
+    'assertions' in record &&
+    normalizeObject(response.stream) !== null &&
+    typeof response.code === 'number'
+  )
+}
+
+function reconstructNewmanUrl(url: unknown): string {
+  const record = normalizeObject(url)
+  if (!record) return ''
+  const protocol = typeof record.protocol === 'string' ? record.protocol : 'https'
+  const host = Array.isArray(record.host) ? (record.host as string[]).join('.') : ''
+  const pathSegments = Array.isArray(record.path) ? (record.path as string[]).join('/') : ''
+  const queryParts = Array.isArray(record.query)
+    ? (record.query as Array<{ key: string; value: string }>)
+        .filter((q) => q.key)
+        .map((q) => `${encodeURIComponent(q.key)}=${encodeURIComponent(q.value ?? '')}`)
+    : []
+  const qs = queryParts.length ? `?${queryParts.join('&')}` : ''
+  return `${protocol}://${host}/${pathSegments}${qs}`
+}
+
+function decodeNewmanStream(stream: unknown): string {
+  const record = normalizeObject(stream)
+  if (!record || !Array.isArray(record.data)) return ''
+  try {
+    return String.fromCharCode(...(record.data as number[]))
+  } catch {
+    return ''
+  }
+}
+
+function parseNewmanEvidence(parsed: unknown): ParsedNewmanEvidence | null {
+  const record = normalizeObject(parsed)
+  if (!record) return null
+
+  const item = normalizeObject(record.item)
+  const request = normalizeObject(record.request)
+  const response = normalizeObject(record.response)
+  if (!item || !request || !response) return null
+
+  const method = typeof request.method === 'string' ? request.method.toUpperCase() : 'UNKNOWN'
+  const fullUrl = reconstructNewmanUrl(request.url)
+
+  const requestHeaders = (Array.isArray(request.header) ? request.header : []) as NewmanHeader[]
+  const responseHeaders = (Array.isArray(response.header) ? response.header : []) as NewmanHeader[]
+
+  const body = normalizeObject(request.body)
+  let requestBodyRaw = ''
+  if (body) {
+    const mode = typeof body.mode === 'string' ? body.mode : ''
+    if (mode === 'raw' && typeof body.raw === 'string') {
+      requestBodyRaw = body.raw
+    } else if (mode === 'urlencoded' && Array.isArray(body.urlencoded)) {
+      requestBodyRaw = (body.urlencoded as Array<{ key: string; value: string; disabled?: boolean }>)
+        .filter((p) => !p.disabled)
+        .map((p) => `${encodeURIComponent(p.key)}=${encodeURIComponent(p.value ?? '')}`)
+        .join('&')
+    } else if (mode === 'formdata' && Array.isArray(body.formdata)) {
+      requestBodyRaw = (body.formdata as Array<{ key: string; value: string; type?: string; disabled?: boolean }>)
+        .filter((p) => !p.disabled)
+        .map((p) => `${p.key}: ${p.value ?? ''}`)
+        .join('\n')
+    } else if (mode === 'graphql') {
+      const gql = normalizeObject(body.graphql)
+      if (gql) {
+        requestBodyRaw = JSON.stringify({ query: gql.query, variables: gql.variables }, null, 2)
+      }
+    }
+  }
+  let requestBodyParsed: unknown | null = null
+  if (requestBodyRaw) {
+    try {
+      requestBodyParsed = JSON.parse(requestBodyRaw)
+    } catch {
+      requestBodyParsed = null
+    }
+  }
+
+  const rawBody = decodeNewmanStream(response.stream)
+  let responseBodyParsed: unknown | null = null
+  try {
+    responseBodyParsed = JSON.parse(rawBody)
+  } catch {
+    responseBodyParsed = null
+  }
+
+  const assertions = (Array.isArray(record.assertions) ? record.assertions : []) as NewmanAssertion[]
+
+  const testScripts: string[] = []
+  const events = Array.isArray(item.event) ? item.event : []
+  for (const ev of events) {
+    const evRecord = normalizeObject(ev)
+    if (!evRecord || evRecord.listen !== 'test') continue
+    const script = normalizeObject(evRecord.script)
+    if (script && Array.isArray(script.exec)) {
+      testScripts.push(...(script.exec as string[]))
+    }
+  }
+
+  return {
+    testName: typeof item.name === 'string' ? item.name : '',
+    method,
+    fullUrl,
+    requestHeaders,
+    requestBody: requestBodyRaw,
+    requestBodyParsed,
+    responseCode: typeof response.code === 'number' ? response.code : 0,
+    responseStatus: typeof response.status === 'string' ? response.status : '',
+    responseHeaders,
+    responseBody: rawBody,
+    responseBodyParsed,
+    responseTime: typeof response.responseTime === 'number' ? response.responseTime : 0,
+    responseSize: typeof response.responseSize === 'number' ? response.responseSize : 0,
+    assertions,
+    testScripts,
+  }
 }
 
 function findValueCaseInsensitive(record: Record<string, unknown>, keys: string[]) {
@@ -753,6 +910,322 @@ function responseStatusBadgeClass(statusCode: number | null) {
   return 'bg-[#6B1F2A]/35 text-[#FCA5A5] ring-[#7C2D3A]'
 }
 
+function formatBytes(bytes: number) {
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+}
+
+function formatMs(ms: number) {
+  if (ms < 1000) return `${ms}ms`
+  return `${(ms / 1000).toFixed(2)}s`
+}
+
+function NewmanEvidenceViewer({ data }: { data: ParsedNewmanEvidence }) {
+  const [activeTab, setActiveTab] = useState<'response' | 'request' | 'assertions' | 'scripts'>('response')
+  const [responseView, setResponseView] = useState<'pretty' | 'raw' | 'headers'>('pretty')
+  const [requestView, setRequestView] = useState<'body' | 'headers' | 'url'>(data.requestBody ? 'body' : 'headers')
+  const [copied, setCopied] = useState('')
+
+  const allPassed = data.assertions.length > 0 && data.assertions.every((a) => !a.error && !a.skipped)
+  const failedCount = data.assertions.filter((a) => a.error).length
+  const userHeaders = data.requestHeaders.filter((h) => !h.system)
+  const statusCodeNum = data.responseCode
+
+  function copyToClipboard(text: string, label: string) {
+    void navigator.clipboard.writeText(text).then(() => {
+      setCopied(label)
+      setTimeout(() => setCopied(''), 1500)
+    })
+  }
+
+  return (
+    <div className="space-y-3">
+      {data.testName ? (
+        <div className="flex items-start gap-3 rounded-xl border border-border/80 bg-muted/20 px-4 py-3">
+          <FlaskConical className="mt-0.5 size-4 shrink-0 text-primary" />
+          <div className="min-w-0 flex-1">
+            <div className="text-sm font-bold text-foreground">{data.testName}</div>
+            <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+              {allPassed ? (
+                <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-2 py-0.5 font-semibold text-emerald-600">
+                  <CheckCircle2 className="size-3" />
+                  {data.assertions.length}/{data.assertions.length} passed
+                </span>
+              ) : failedCount > 0 ? (
+                <span className="inline-flex items-center gap-1 rounded-full bg-rose-500/10 px-2 py-0.5 font-semibold text-rose-600">
+                  <CircleX className="size-3" />
+                  {failedCount} failed
+                </span>
+              ) : null}
+              <span className="inline-flex items-center gap-1">
+                <Clock className="size-3" />
+                {formatMs(data.responseTime)}
+              </span>
+              <span className="inline-flex items-center gap-1">
+                <Scale className="size-3" />
+                {formatBytes(data.responseSize)}
+              </span>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      <div className="flex items-center gap-2 rounded-lg border border-border/80 bg-card px-3 py-2">
+        <span
+          className={`inline-flex min-w-[4rem] items-center justify-center rounded-md px-2.5 py-1 text-xs font-bold tracking-wide ring-1 ${methodBadgeClass(data.method)}`}
+        >
+          {data.method}
+        </span>
+        <code className="min-w-0 flex-1 break-all text-xs text-foreground">{data.fullUrl}</code>
+        <button
+          type="button"
+          className="shrink-0 rounded p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+          title="Copy URL"
+          onClick={() => copyToClipboard(data.fullUrl, 'url')}
+        >
+          {copied === 'url' ? <CheckCircle2 className="size-3.5 text-emerald-500" /> : <Copy className="size-3.5" />}
+        </button>
+        <span
+          className={`inline-flex items-center rounded-md px-2 py-1 text-xs font-bold ring-1 ${responseStatusBadgeClass(statusCodeNum)}`}
+        >
+          {statusCodeNum} {data.responseStatus}
+        </span>
+      </div>
+
+      <div className="rounded-xl border border-border/80 bg-card">
+        <div className="flex items-center gap-0 border-b border-border/60 px-1">
+          {(
+            [
+              { key: 'response', label: 'Response', icon: ArrowDownUp },
+              { key: 'request', label: 'Request', icon: Network },
+              { key: 'assertions', label: `Assertions (${data.assertions.length})`, icon: ShieldCheck },
+              { key: 'scripts', label: 'Scripts', icon: FileCode2 },
+            ] as const
+          ).map((tab) => (
+            <button
+              key={tab.key}
+              type="button"
+              onClick={() => setActiveTab(tab.key)}
+              className={`relative flex items-center gap-1.5 px-3 py-2.5 text-xs font-semibold transition-colors ${
+                activeTab === tab.key
+                  ? 'text-primary'
+                  : 'text-muted-foreground hover:text-foreground'
+              }`}
+            >
+              <tab.icon className="size-3.5" />
+              {tab.label}
+              {activeTab === tab.key ? (
+                <span className="absolute right-3 bottom-0 left-3 h-[2px] rounded-full bg-primary" />
+              ) : null}
+            </button>
+          ))}
+        </div>
+
+        <div className="max-h-[calc(90vh-280px)] overflow-auto p-3">
+          {activeTab === 'response' ? (
+            <div className="space-y-2">
+              <div className="flex items-center gap-1">
+                {(['pretty', 'raw', 'headers'] as const).map((mode) => (
+                  <button
+                    key={mode}
+                    type="button"
+                    onClick={() => setResponseView(mode)}
+                    className={`rounded-md px-2.5 py-1 text-xs font-medium transition-colors ${
+                      responseView === mode
+                        ? 'bg-primary/10 text-primary'
+                        : 'text-muted-foreground hover:bg-muted hover:text-foreground'
+                    }`}
+                  >
+                    {mode.charAt(0).toUpperCase() + mode.slice(1)}
+                  </button>
+                ))}
+                <button
+                  type="button"
+                  className="ml-auto rounded p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                  title="Copy response body"
+                  onClick={() =>
+                    copyToClipboard(
+                      responseView === 'pretty' && data.responseBodyParsed
+                        ? prettyPrint(data.responseBodyParsed)
+                        : responseView === 'headers'
+                          ? data.responseHeaders.map((h) => `${h.key}: ${h.value}`).join('\n')
+                          : data.responseBody,
+                      'response',
+                    )
+                  }
+                >
+                  {copied === 'response' ? (
+                    <CheckCircle2 className="size-3.5 text-emerald-500" />
+                  ) : (
+                    <Copy className="size-3.5" />
+                  )}
+                </button>
+              </div>
+              {responseView === 'headers' ? (
+                <div className="rounded-lg border border-border/60 bg-muted/20">
+                  <table className="w-full text-xs">
+                    <thead>
+                      <tr className="border-b border-border/60">
+                        <th className="px-3 py-2 text-left font-semibold text-muted-foreground">Header</th>
+                        <th className="px-3 py-2 text-left font-semibold text-muted-foreground">Value</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {data.responseHeaders.map((h, i) => (
+                        <tr key={i} className="border-b border-border/30 last:border-0">
+                          <td className="px-3 py-1.5 font-mono font-medium text-foreground">{h.key}</td>
+                          <td className="break-all px-3 py-1.5 font-mono text-muted-foreground">{h.value}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <pre className="overflow-x-auto rounded-lg border border-border/60 bg-slate-950 p-3 font-mono text-xs leading-relaxed text-slate-200">
+                  {responseView === 'pretty' && data.responseBodyParsed
+                    ? prettyPrint(data.responseBodyParsed)
+                    : data.responseBody || '(empty body)'}
+                </pre>
+              )}
+            </div>
+          ) : activeTab === 'request' ? (
+            <div className="space-y-2">
+              <div className="flex items-center gap-1">
+                {(['body', 'headers', 'url'] as const).map((mode) => (
+                  <button
+                    key={mode}
+                    type="button"
+                    onClick={() => setRequestView(mode)}
+                    className={`rounded-md px-2.5 py-1 text-xs font-medium transition-colors ${
+                      requestView === mode
+                        ? 'bg-primary/10 text-primary'
+                        : 'text-muted-foreground hover:bg-muted hover:text-foreground'
+                    }`}
+                  >
+                    {mode.charAt(0).toUpperCase() + mode.slice(1)}
+                  </button>
+                ))}
+                <button
+                  type="button"
+                  className="ml-auto rounded p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                  title="Copy request body"
+                  onClick={() =>
+                    copyToClipboard(
+                      requestView === 'body' && data.requestBodyParsed
+                        ? prettyPrint(data.requestBodyParsed)
+                        : requestView === 'headers'
+                          ? data.requestHeaders.map((h) => `${h.key}: ${h.value}`).join('\n')
+                          : data.requestBody || data.fullUrl,
+                      'request',
+                    )
+                  }
+                >
+                  {copied === 'request' ? (
+                    <CheckCircle2 className="size-3.5 text-emerald-500" />
+                  ) : (
+                    <Copy className="size-3.5" />
+                  )}
+                </button>
+              </div>
+              {requestView === 'body' ? (
+                <pre className="overflow-x-auto rounded-lg border border-border/60 bg-slate-950 p-3 font-mono text-xs leading-relaxed text-slate-200">
+                  {data.requestBodyParsed
+                    ? prettyPrint(data.requestBodyParsed)
+                    : data.requestBody || '(empty body)'}
+                </pre>
+              ) : requestView === 'url' ? (
+                <div className="space-y-2">
+                  <pre className="overflow-x-auto rounded-lg border border-border/60 bg-slate-950 p-3 font-mono text-xs leading-relaxed text-slate-200">
+                    {data.method} {data.fullUrl} HTTP/1.1{'\n'}
+                    {userHeaders.map((h) => `${h.key}: ${h.value}`).join('\n')}
+                  </pre>
+                </div>
+              ) : (
+                <div className="rounded-lg border border-border/60 bg-muted/20">
+                  <table className="w-full text-xs">
+                    <thead>
+                      <tr className="border-b border-border/60">
+                        <th className="px-3 py-2 text-left font-semibold text-muted-foreground">Header</th>
+                        <th className="px-3 py-2 text-left font-semibold text-muted-foreground">Value</th>
+                        <th className="w-16 px-3 py-2 text-left font-semibold text-muted-foreground">Type</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {data.requestHeaders.map((h, i) => (
+                        <tr key={i} className={`border-b border-border/30 last:border-0 ${h.system ? 'opacity-50' : ''}`}>
+                          <td className="px-3 py-1.5 font-mono font-medium text-foreground">{h.key}</td>
+                          <td className="break-all px-3 py-1.5 font-mono text-muted-foreground">{h.value}</td>
+                          <td className="px-3 py-1.5">
+                            {h.system ? (
+                              <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
+                                auto
+                              </span>
+                            ) : (
+                              <span className="rounded bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium text-primary">
+                                custom
+                              </span>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          ) : activeTab === 'assertions' ? (
+            <div className="space-y-1">
+              {data.assertions.length === 0 ? (
+                <p className="py-4 text-center text-sm text-muted-foreground">No assertions recorded.</p>
+              ) : (
+                data.assertions.map((a, i) => (
+                  <div
+                    key={i}
+                    className={`flex items-start gap-2.5 rounded-lg px-3 py-2 text-sm ${
+                      a.error
+                        ? 'border border-rose-200 bg-rose-50 dark:border-rose-900/40 dark:bg-rose-950/20'
+                        : a.skipped
+                          ? 'border border-amber-200 bg-amber-50 dark:border-amber-900/40 dark:bg-amber-950/20'
+                          : 'bg-muted/30'
+                    }`}
+                  >
+                    {a.error ? (
+                      <CircleX className="mt-0.5 size-4 shrink-0 text-rose-500" />
+                    ) : a.skipped ? (
+                      <span className="mt-0.5 size-4 shrink-0 rounded-full border-2 border-amber-400" />
+                    ) : (
+                      <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-emerald-500" />
+                    )}
+                    <div className="min-w-0 flex-1">
+                      <span className={`font-medium ${a.error ? 'text-rose-700 dark:text-rose-300' : 'text-foreground'}`}>
+                        {a.assertion}
+                      </span>
+                      {a.error?.message ? (
+                        <p className="mt-0.5 text-xs text-rose-600 dark:text-rose-400">{a.error.message}</p>
+                      ) : null}
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {data.testScripts.length === 0 ? (
+                <p className="py-4 text-center text-sm text-muted-foreground">No test scripts recorded.</p>
+              ) : (
+                <pre className="overflow-x-auto rounded-lg border border-border/60 bg-slate-950 p-3 font-mono text-xs leading-relaxed text-slate-200">
+                  {data.testScripts.join('\n')}
+                </pre>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function EvidenceFileCard({ sourcePath, label, resolvedPath }: EvidenceNodeProps) {
   const displayPath = label || resolvedPath || sourcePath
   const kind = evidenceKind(displayPath)
@@ -768,6 +1241,7 @@ function EvidenceFileCard({ sourcePath, label, resolvedPath }: EvidenceNodeProps
   const [responseStatus, setResponseStatus] = useState<string | null>(null)
   const [requestViewMode, setRequestViewMode] = useState<'body' | 'raw'>('body')
   const [responseViewMode, setResponseViewMode] = useState<'body' | 'raw'>('body')
+  const [newmanData, setNewmanData] = useState<ParsedNewmanEvidence | null>(null)
 
   useEffect(() => {
     if (!dialogOpen || !previewable) {
@@ -788,11 +1262,21 @@ function EvidenceFileCard({ sourcePath, label, resolvedPath }: EvidenceNodeProps
       setResponseStatus(null)
       setRequestViewMode('body')
       setResponseViewMode('body')
+      setNewmanData(null)
 
       try {
         const mainDoc = await loadEvidenceDocument(sourcePath, displayPath, kind)
         if (cancelled) {
           return
+        }
+
+        if (isNewmanFormat(mainDoc.parsedJson)) {
+          const parsed = parseNewmanEvidence(mainDoc.parsedJson)
+          if (parsed) {
+            setCurrentDoc(mainDoc)
+            setNewmanData(parsed)
+            return
+          }
         }
 
         let reqDoc: LoadedEvidenceDoc | null = null
@@ -923,21 +1407,45 @@ function EvidenceFileCard({ sourcePath, label, resolvedPath }: EvidenceNodeProps
           showCloseButton
         >
           <DialogHeader className="border-b px-5 pt-5 pb-3">
-            <DialogTitle className="truncate">{fileNameFromPath(displayPath) || 'Evidence Viewer'}</DialogTitle>
-            <DialogDescription className="truncate font-mono text-xs">{displayPath}</DialogDescription>
+            <div className="flex items-center gap-2.5">
+              <Badge variant="outline" className="shrink-0 font-semibold">
+                {evidenceBadge(kind)}
+              </Badge>
+              <DialogTitle className="min-w-0 truncate text-base">
+                {fileNameFromPath(displayPath) || 'Evidence Viewer'}
+              </DialogTitle>
+            </div>
+            <DialogDescription className="flex items-center gap-2 truncate font-mono text-xs">
+              <span className="truncate">{displayPath}</span>
+              <a
+                href={sourcePath}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex shrink-0 items-center gap-1 text-primary hover:underline"
+              >
+                <ExternalLink className="size-3" />
+                Open
+              </a>
+            </DialogDescription>
           </DialogHeader>
 
-          <div className="max-h-[75vh] overflow-auto px-5 pb-2">
+          <div className="overflow-auto px-5 py-4" style={{ maxHeight: 'calc(90vh - 120px)' }}>
             {loadingViewer ? (
-              <div className="space-y-2 py-1">
-                <Skeleton className="h-8 w-48" />
-                <Skeleton className="h-72 w-full" />
+              <div className="space-y-3 py-2">
+                <div className="flex items-center gap-2">
+                  <Loader2 className="size-4 animate-spin text-primary" />
+                  <span className="text-sm text-muted-foreground">Loading evidence...</span>
+                </div>
+                <Skeleton className="h-10 w-full rounded-lg" />
+                <Skeleton className="h-64 w-full rounded-lg" />
               </div>
             ) : viewerError ? (
-              <Alert>
+              <Alert variant="destructive">
                 <AlertTitle>Unable to load evidence</AlertTitle>
                 <AlertDescription>{viewerError}</AlertDescription>
               </Alert>
+            ) : currentDoc && newmanData ? (
+              <NewmanEvidenceViewer data={newmanData} />
             ) : currentDoc ? (
               requestDoc && responseDoc ? (
                 <div className="space-y-3 rounded-xl border border-[#2A2E36] bg-[#15171C] p-3 text-[#D7DAE0]">
