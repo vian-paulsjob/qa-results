@@ -931,7 +931,6 @@ function NewmanEvidenceViewer({ data }: { data: ParsedNewmanEvidence }) {
   const failedCount = data.assertions.filter((a) => a.error).length
   const userHeaders = data.requestHeaders.filter((h) => !h.system)
   const statusCodeNum = data.responseCode
-
   function copyToClipboard(text: string, label: string) {
     void navigator.clipboard.writeText(text).then(() => {
       setCopied(label)
@@ -977,7 +976,9 @@ function NewmanEvidenceViewer({ data }: { data: ParsedNewmanEvidence }) {
         >
           {data.method}
         </span>
-        <code className="min-w-0 flex-1 break-all text-xs text-foreground">{data.fullUrl}</code>
+        <div className="min-w-0 flex-1 overflow-x-auto">
+          <code className="block whitespace-nowrap text-xs text-foreground">{data.fullUrl}</code>
+        </div>
         <button
           type="button"
           className="shrink-0 rounded p-1 text-muted-foreground transition-all duration-200 hover:bg-muted hover:text-foreground hover:scale-110 active:scale-95"
