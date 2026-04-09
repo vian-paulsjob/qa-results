@@ -848,12 +848,12 @@ function tokenizeJsonLine(line: string): JsonToken[] {
 
 function colorClassForJsonToken(type: JsonToken['type']) {
   if (type === 'key') return 'text-[#9CDCFE]'
-  if (type === 'string') return 'text-[#F78C6C]'
+  if (type === 'string') return 'text-[#CE9178]'
   if (type === 'number') return 'text-[#B5CEA8]'
-  if (type === 'boolean') return 'text-[#4EC9B0]'
-  if (type === 'null') return 'text-[#7F848E] italic'
-  if (type === 'punctuation') return 'text-[#80848E]'
-  return 'text-[#D7DAE0]'
+  if (type === 'boolean') return 'text-[#569CD6]'
+  if (type === 'null') return 'text-[#C586C0] italic'
+  if (type === 'punctuation') return 'text-[#D4D4D4]'
+  return 'text-[#D4D4D4]'
 }
 
 function renderJsonSyntaxHighlight(content: string): ReactNode {
@@ -887,7 +887,7 @@ function CodePreview({ content, animationKey }: { content: string, animationKey?
 
   return (
     <div key={animationKey} className="animate-in fade-in-0 slide-in-from-bottom-1 duration-200">
-      <div className="h-[15rem] min-h-[10rem] max-h-[70vh] resize-y overflow-auto rounded-lg border border-[#2A2E36] bg-[#0F1117] p-3 font-mono text-xs leading-relaxed text-[#D7DAE0]">
+      <div className="h-[15rem] min-h-[10rem] max-h-[70vh] resize-y overflow-auto rounded-lg border border-[#2D2D30] bg-[#1E1E1E] p-3 font-mono text-xs leading-relaxed text-[#D4D4D4]">
         <pre className="m-0 min-h-full whitespace-pre">{highlighted}</pre>
       </div>
     </div>
@@ -1006,7 +1006,12 @@ function NewmanEvidenceViewer({ data }: { data: ParsedNewmanEvidence }) {
             <button
               key={tab.key}
               type="button"
-              onClick={() => setActiveTab(tab.key)}
+              onClick={() => {
+                setActiveTab(tab.key)
+                if (tab.key === 'request') {
+                  setRequestView('body')
+                }
+              }}
               className={`relative flex items-center gap-1.5 px-3 py-2.5 text-xs font-semibold transition-all duration-200 ${
                 activeTab === tab.key
                   ? 'text-primary'
@@ -1084,11 +1089,14 @@ function NewmanEvidenceViewer({ data }: { data: ParsedNewmanEvidence }) {
                   </table>
                 </div>
               ) : (
-                <pre className="overflow-x-auto rounded-lg border border-border/60 bg-slate-950 p-3 font-mono text-xs leading-relaxed text-slate-200">
-                  {responseView === 'pretty' && data.responseBodyParsed
-                    ? prettyPrint(data.responseBodyParsed)
-                    : data.responseBody || '(empty body)'}
-                </pre>
+                <CodePreview
+                  content={
+                    responseView === 'pretty' && data.responseBodyParsed
+                      ? prettyPrint(data.responseBodyParsed)
+                      : data.responseBody || '(empty body)'
+                  }
+                  animationKey={`response-${responseView}`}
+                />
               )}
             </div>
           ) : activeTab === 'request' ? (
@@ -1131,17 +1139,20 @@ function NewmanEvidenceViewer({ data }: { data: ParsedNewmanEvidence }) {
                 </button>
               </div>
               {requestView === 'body' ? (
-                <pre className="overflow-x-auto rounded-lg border border-border/60 bg-slate-950 p-3 font-mono text-xs leading-relaxed text-slate-200">
-                  {data.requestBodyParsed
-                    ? prettyPrint(data.requestBodyParsed)
-                    : data.requestBody || '(empty body)'}
-                </pre>
+                <CodePreview
+                  content={
+                    data.requestBodyParsed
+                      ? prettyPrint(data.requestBodyParsed)
+                      : data.requestBody || '(empty body)'
+                  }
+                  animationKey={`request-${requestView}`}
+                />
               ) : requestView === 'url' ? (
                 <div className="space-y-2">
-                  <pre className="overflow-x-auto rounded-lg border border-border/60 bg-slate-950 p-3 font-mono text-xs leading-relaxed text-slate-200">
-                    {data.method} {data.fullUrl} HTTP/1.1{'\n'}
-                    {userHeaders.map((h) => `${h.key}: ${h.value}`).join('\n')}
-                  </pre>
+                  <CodePreview
+                    content={`${data.method} ${data.fullUrl} HTTP/1.1\n${userHeaders.map((h) => `${h.key}: ${h.value}`).join('\n')}`}
+                    animationKey={`request-${requestView}`}
+                  />
                 </div>
               ) : (
                 <div className="rounded-lg border border-border/60 bg-muted/20">
@@ -1216,9 +1227,7 @@ function NewmanEvidenceViewer({ data }: { data: ParsedNewmanEvidence }) {
               {data.testScripts.length === 0 ? (
                 <p className="py-4 text-center text-sm text-muted-foreground">No test scripts recorded.</p>
               ) : (
-                <pre className="overflow-x-auto rounded-lg border border-border/60 bg-slate-950 p-3 font-mono text-xs leading-relaxed text-slate-200">
-                  {data.testScripts.join('\n')}
-                </pre>
+                <CodePreview content={data.testScripts.join('\n')} animationKey="scripts" />
               )}
             </div>
           )}
@@ -1450,42 +1459,42 @@ function EvidenceFileCard({ sourcePath, label, resolvedPath }: EvidenceNodeProps
               <NewmanEvidenceViewer data={newmanData} />
             ) : currentDoc ? (
               requestDoc && responseDoc ? (
-                <div className="space-y-3 rounded-xl border border-[#2A2E36] bg-[#15171C] p-3 text-[#D7DAE0] animate-in fade-in-0 slide-in-from-bottom-2 duration-300">
-                  <section className="rounded-lg border border-[#2A2E36] bg-[#12141A] p-3 animate-in fade-in-0 duration-300 fill-mode-both" style={{ animationDelay: '50ms' }}>
+                <div className="space-y-3 rounded-xl border border-[#1D4477] bg-[#0A1F3F] p-3 text-[#EAF1FF] animate-in fade-in-0 slide-in-from-bottom-2 duration-300">
+                  <section className="rounded-lg border border-[#1D4477] bg-[#081833] p-3 animate-in fade-in-0 duration-300 fill-mode-both" style={{ animationDelay: '50ms' }}>
                     <div className="mb-2 flex items-center justify-between gap-2">
-                      <span className="text-xs font-semibold tracking-wide text-[#D7DAE0] uppercase">Request</span>
+                      <span className="text-xs font-semibold tracking-wide text-[#EAF1FF] uppercase">Request</span>
                       <span className="flex items-center gap-2">
-                        <span className="inline-flex overflow-hidden rounded-md border border-[#2F3440] bg-[#1B1F27]">
+                        <span className="inline-flex overflow-hidden rounded-md border border-[#1D4477] bg-[#0A254B]">
                           <button
                             type="button"
-                            className={`px-2 py-0.5 text-[11px] transition-all duration-150 ${requestViewMode === 'body' ? 'bg-[#3B404C] text-[#E8EAEE]' : 'text-[#9AA0AA] hover:text-[#D7DAE0]'}`}
+                            className={`px-2 py-0.5 text-[11px] transition-all duration-150 ${requestViewMode === 'body' ? 'bg-[#FF6C37] text-white' : 'text-[#9CB0CF] hover:text-[#EAF1FF]'}`}
                             onClick={() => setRequestViewMode('body')}
                           >
                             Body
                           </button>
                           <button
                             type="button"
-                            className={`px-2 py-0.5 text-[11px] transition-all duration-150 ${requestViewMode === 'raw' ? 'bg-[#3B404C] text-[#E8EAEE]' : 'text-[#9AA0AA] hover:text-[#D7DAE0]'}`}
+                            className={`px-2 py-0.5 text-[11px] transition-all duration-150 ${requestViewMode === 'raw' ? 'bg-[#FF6C37] text-white' : 'text-[#9CB0CF] hover:text-[#EAF1FF]'}`}
                             onClick={() => setRequestViewMode('raw')}
                           >
                             Raw
                           </button>
                         </span>
-                        <span className="text-[11px] text-[#8F949E]">{fileNameFromPath(requestDoc.displayPath)}</span>
+                        <span className="text-[11px] text-[#9CB0CF]">{fileNameFromPath(requestDoc.displayPath)}</span>
                       </span>
                     </div>
-                    <div className="mb-2 rounded-md border border-[#2F3440] bg-[#1A1D24] px-2.5 py-1.5 text-xs">
+                    <div className="mb-2 rounded-md border border-[#1D4477] bg-[#0A254B] px-2.5 py-1.5 text-xs">
                       <span className="flex flex-wrap items-center gap-2">
                         <span
                           className={`inline-flex min-w-[3.75rem] items-center justify-center rounded px-2 py-0.5 font-semibold tracking-wide ring-1 transition-all duration-200 hover:scale-105 hover:brightness-125 ${methodBadgeClass(requestMethod || 'UNKNOWN')}`}
                         >
                           {requestMethod || 'REQ'}
                         </span>
-                        <code className="break-all text-[#D7DAE0]">{requestUrl || 'No URL detected in evidence'}</code>
+                        <code className="break-all text-[#EAF1FF]">{requestUrl || 'No URL detected in evidence'}</code>
                       </span>
                     </div>
                     <div>
-                      <div className="mb-1 text-[11px] font-semibold tracking-wide text-[#8F949E] uppercase">
+                      <div className="mb-1 text-[11px] font-semibold tracking-wide text-[#9CB0CF] uppercase">
                         {requestViewMode === 'body' ? 'Body (read only)' : 'Raw (read only)'}
                       </div>
                       <CodePreview
@@ -1499,21 +1508,21 @@ function EvidenceFileCard({ sourcePath, label, resolvedPath }: EvidenceNodeProps
                     </div>
                   </section>
 
-                  <section className="rounded-lg border border-[#2A2E36] bg-[#12141A] p-3 animate-in fade-in-0 duration-300 fill-mode-both" style={{ animationDelay: '120ms' }}>
+                  <section className="rounded-lg border border-[#1D4477] bg-[#081833] p-3 animate-in fade-in-0 duration-300 fill-mode-both" style={{ animationDelay: '120ms' }}>
                     <div className="mb-2 flex items-center justify-between gap-2">
-                      <span className="text-xs font-semibold tracking-wide text-[#D7DAE0] uppercase">Response</span>
-                      <span className="flex items-center gap-2 text-[11px] text-[#8F949E]">
-                        <span className="inline-flex overflow-hidden rounded-md border border-[#2F3440] bg-[#1B1F27]">
+                      <span className="text-xs font-semibold tracking-wide text-[#EAF1FF] uppercase">Response</span>
+                      <span className="flex items-center gap-2 text-[11px] text-[#9CB0CF]">
+                        <span className="inline-flex overflow-hidden rounded-md border border-[#1D4477] bg-[#0A254B]">
                           <button
                             type="button"
-                            className={`px-2 py-0.5 text-[11px] transition-all duration-150 ${responseViewMode === 'body' ? 'bg-[#3B404C] text-[#E8EAEE]' : 'text-[#9AA0AA] hover:text-[#D7DAE0]'}`}
+                            className={`px-2 py-0.5 text-[11px] transition-all duration-150 ${responseViewMode === 'body' ? 'bg-[#FF6C37] text-white' : 'text-[#9CB0CF] hover:text-[#EAF1FF]'}`}
                             onClick={() => setResponseViewMode('body')}
                           >
                             Body
                           </button>
                           <button
                             type="button"
-                            className={`px-2 py-0.5 text-[11px] transition-all duration-150 ${responseViewMode === 'raw' ? 'bg-[#3B404C] text-[#E8EAEE]' : 'text-[#9AA0AA] hover:text-[#D7DAE0]'}`}
+                            className={`px-2 py-0.5 text-[11px] transition-all duration-150 ${responseViewMode === 'raw' ? 'bg-[#FF6C37] text-white' : 'text-[#9CB0CF] hover:text-[#EAF1FF]'}`}
                             onClick={() => setResponseViewMode('raw')}
                           >
                             Raw
@@ -1528,7 +1537,7 @@ function EvidenceFileCard({ sourcePath, label, resolvedPath }: EvidenceNodeProps
                       </span>
                     </div>
                     <div>
-                      <div className="mb-1 text-[11px] font-semibold tracking-wide text-[#8F949E] uppercase">
+                      <div className="mb-1 text-[11px] font-semibold tracking-wide text-[#9CB0CF] uppercase">
                         {responseViewMode === 'body' ? 'Body (read only)' : 'Raw (read only)'}
                       </div>
                       <CodePreview
