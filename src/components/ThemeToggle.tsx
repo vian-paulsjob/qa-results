@@ -60,7 +60,7 @@ export default function ThemeToggle() {
         className={`absolute top-1 h-8 w-8 rounded-full transition-transform duration-250 ${
           mode === 'dark'
             ? 'translate-x-1 bg-[#f4f4f5] shadow-[0_2px_10px_rgba(0,0,0,0.34)]'
-            : 'translate-x-[1.75rem] bg-[#232429] shadow-[0_2px_10px_rgba(0,0,0,0.35)]'
+            : 'translate-x-[2.25rem] bg-[#232429] shadow-[0_2px_10px_rgba(0,0,0,0.35)]'
         }`}
         aria-hidden="true"
       />
