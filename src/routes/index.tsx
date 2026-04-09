@@ -1,5 +1,5 @@
 import { createFileRoute } from '@tanstack/react-router'
-import { Children, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { Children, Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import {
   CheckCircle2,
   Command as CommandIcon,
@@ -32,7 +32,6 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
-  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from '#/components/ui/dialog'
@@ -548,6 +547,12 @@ function findRequestMethod(value: unknown): string | null {
   return null
 }
 
+function stripKeys(record: Record<string, unknown>, keys: string[]) {
+  const keySet = new Set(keys.map((key) => key.toLowerCase()))
+  const entries = Object.entries(record).filter(([key]) => !keySet.has(key.toLowerCase()))
+  return Object.fromEntries(entries)
+}
+
 function extractRequestBody(value: unknown): unknown {
   const record = normalizeObject(value)
   if (!record) {
@@ -571,7 +576,20 @@ function extractRequestBody(value: unknown): unknown {
     return extractRequestBody(nestedRequest)
   }
 
-  return value
+  const payloadOnly = stripKeys(record, [
+    'url',
+    'uri',
+    'endpoint',
+    'path',
+    'method',
+    'http_method',
+    'request_method',
+    'verb',
+    'headers',
+    'params',
+    'query',
+  ])
+  return Object.keys(payloadOnly).length ? payloadOnly : value
 }
 
 function extractResponseBody(value: unknown): unknown {
@@ -597,7 +615,19 @@ function extractResponseBody(value: unknown): unknown {
     return extractResponseBody(nestedResponse)
   }
 
-  return value
+  const payloadOnly = stripKeys(record, [
+    'status',
+    'status_code',
+    'statuscode',
+    'code',
+    'headers',
+    'duration',
+    'duration_ms',
+    'latency',
+    'latency_ms',
+    'size',
+  ])
+  return Object.keys(payloadOnly).length ? payloadOnly : value
 }
 
 function toDisplayBody(value: unknown, fallbackText: string) {
@@ -612,20 +642,115 @@ function toDisplayBody(value: unknown, fallbackText: string) {
   return prettyPrint(value)
 }
 
+type JsonToken = {
+  type: 'key' | 'string' | 'number' | 'boolean' | 'null' | 'punctuation' | 'text'
+  value: string
+}
+
+function tokenizeJsonLine(line: string): JsonToken[] {
+  const tokens: JsonToken[] = []
+  const pattern =
+    /("(?:\\.|[^"\\])*")(?=\s*:)|("(?:\\.|[^"\\])*")|\b(true|false)\b|\b(null)\b|(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)|([{}\[\],:])/g
+
+  let lastIndex = 0
+  let match: RegExpExecArray | null = null
+  while ((match = pattern.exec(line)) !== null) {
+    if (match.index > lastIndex) {
+      tokens.push({
+        type: 'text',
+        value: line.slice(lastIndex, match.index),
+      })
+    }
+
+    if (match[1]) {
+      tokens.push({ type: 'key', value: match[1] })
+    } else if (match[2]) {
+      tokens.push({ type: 'string', value: match[2] })
+    } else if (match[3]) {
+      tokens.push({ type: 'boolean', value: match[3] })
+    } else if (match[4]) {
+      tokens.push({ type: 'null', value: match[4] })
+    } else if (match[5]) {
+      tokens.push({ type: 'number', value: match[5] })
+    } else if (match[6]) {
+      tokens.push({ type: 'punctuation', value: match[6] })
+    }
+
+    lastIndex = pattern.lastIndex
+  }
+
+  if (lastIndex < line.length) {
+    tokens.push({
+      type: 'text',
+      value: line.slice(lastIndex),
+    })
+  }
+
+  return tokens
+}
+
+function colorClassForJsonToken(type: JsonToken['type']) {
+  if (type === 'key') return 'text-[#9CDCFE]'
+  if (type === 'string') return 'text-[#F78C6C]'
+  if (type === 'number') return 'text-[#B5CEA8]'
+  if (type === 'boolean') return 'text-[#4EC9B0]'
+  if (type === 'null') return 'text-[#7F848E] italic'
+  if (type === 'punctuation') return 'text-[#80848E]'
+  return 'text-[#D7DAE0]'
+}
+
+function renderJsonSyntaxHighlight(content: string): ReactNode {
+  const lines = content.split('\n')
+  return lines.map((line, lineIndex) => {
+    const tokens = tokenizeJsonLine(line)
+    return (
+      <Fragment key={`${lineIndex}-${line}`}>
+        {tokens.map((token, tokenIndex) => (
+          <span
+            key={`${lineIndex}-${tokenIndex}-${token.value}`}
+            className={colorClassForJsonToken(token.type)}
+          >
+            {token.value}
+          </span>
+        ))}
+        {lineIndex < lines.length - 1 ? '\n' : null}
+      </Fragment>
+    )
+  })
+}
+
+function CodePreview({ content, animationKey }: { content: string, animationKey?: string }) {
+  let highlighted: ReactNode = content
+  try {
+    JSON.parse(content)
+    highlighted = renderJsonSyntaxHighlight(content)
+  } catch {
+    highlighted = content
+  }
+
+  return (
+    <div key={animationKey} className="animate-in fade-in-0 slide-in-from-bottom-1 duration-200">
+      <div className="h-[15rem] min-h-[10rem] max-h-[70vh] resize-y overflow-auto rounded-lg border border-[#2A2E36] bg-[#0F1117] p-3 font-mono text-xs leading-relaxed text-[#D7DAE0]">
+        <pre className="m-0 min-h-full whitespace-pre">{highlighted}</pre>
+      </div>
+    </div>
+  )
+}
+
 function methodBadgeClass(method: string) {
-  if (method === 'GET') return 'bg-emerald-500/15 text-emerald-300 ring-emerald-500/30'
-  if (method === 'POST') return 'bg-amber-500/15 text-amber-300 ring-amber-500/30'
-  if (method === 'PUT' || method === 'PATCH') return 'bg-sky-500/15 text-sky-300 ring-sky-500/30'
-  if (method === 'DELETE') return 'bg-rose-500/15 text-rose-300 ring-rose-500/30'
-  return 'bg-zinc-500/15 text-zinc-200 ring-zinc-500/30'
+  if (method === 'GET') return 'bg-[#1D6D52]/30 text-[#6EE7B7] ring-[#1D6D52]'
+  if (method === 'POST') return 'bg-[#6B4E16]/40 text-[#FBBF24] ring-[#7C5A18]'
+  if (method === 'PUT' || method === 'PATCH') return 'bg-[#214A7A]/35 text-[#7DD3FC] ring-[#2D5F96]'
+  if (method === 'DELETE') return 'bg-[#6B1F2A]/35 text-[#FCA5A5] ring-[#7C2D3A]'
+  return 'bg-[#343A46] text-[#D7DAE0] ring-[#4A5160]'
 }
 
 function responseStatusBadgeClass(statusCode: number | null) {
-  if (!statusCode) return 'bg-zinc-500/15 text-zinc-200 ring-zinc-500/30'
-  if (statusCode >= 200 && statusCode < 300) return 'bg-emerald-500/15 text-emerald-300 ring-emerald-500/30'
-  if (statusCode >= 300 && statusCode < 400) return 'bg-sky-500/15 text-sky-300 ring-sky-500/30'
-  if (statusCode >= 400 && statusCode < 500) return 'bg-orange-500/15 text-orange-300 ring-orange-500/30'
-  return 'bg-rose-500/15 text-rose-300 ring-rose-500/30'
+  if (!statusCode) return 'bg-[#343A46] text-[#D7DAE0] ring-[#4A5160]'
+  if (statusCode >= 200 && statusCode < 300) return 'bg-[#1D6D52]/30 text-[#6EE7B7] ring-[#1D6D52]'
+  if (statusCode >= 300 && statusCode < 400) return 'bg-[#214A7A]/35 text-[#7DD3FC] ring-[#2D5F96]'
+  if (statusCode >= 400 && statusCode < 500) return 'bg-[#6B2A1B]/45 text-[#FDBA74] ring-[#7C3420]'
+  return 'bg-[#6B1F2A]/35 text-[#FCA5A5] ring-[#7C2D3A]'
 }
 
 function EvidenceFileCard({ sourcePath, label, resolvedPath }: EvidenceNodeProps) {
@@ -793,7 +918,10 @@ function EvidenceFileCard({ sourcePath, label, resolvedPath }: EvidenceNodeProps
       </Card>
 
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="max-w-[min(1100px,calc(100%-2rem))] gap-3 p-0" showCloseButton>
+        <DialogContent
+          className="w-[min(1700px,calc(100vw-1rem))] max-w-[min(1700px,calc(100vw-1rem))] sm:max-w-[min(1700px,calc(100vw-1rem))] gap-3 p-0"
+          showCloseButton
+        >
           <DialogHeader className="border-b px-5 pt-5 pb-3">
             <DialogTitle className="truncate">{fileNameFromPath(displayPath) || 'Evidence Viewer'}</DialogTitle>
             <DialogDescription className="truncate font-mono text-xs">{displayPath}</DialogDescription>
@@ -812,67 +940,70 @@ function EvidenceFileCard({ sourcePath, label, resolvedPath }: EvidenceNodeProps
               </Alert>
             ) : currentDoc ? (
               requestDoc && responseDoc ? (
-                <div className="space-y-3 rounded-xl border border-zinc-800 bg-zinc-950 p-3 text-zinc-100">
-                  <section className="rounded-lg border border-zinc-800 bg-zinc-900/60 p-3">
+                <div className="space-y-3 rounded-xl border border-[#2A2E36] bg-[#15171C] p-3 text-[#D7DAE0]">
+                  <section className="rounded-lg border border-[#2A2E36] bg-[#12141A] p-3">
                     <div className="mb-2 flex items-center justify-between gap-2">
-                      <span className="text-xs font-semibold tracking-wide text-zinc-200 uppercase">Request</span>
+                      <span className="text-xs font-semibold tracking-wide text-[#D7DAE0] uppercase">Request</span>
                       <span className="flex items-center gap-2">
-                        <span className="inline-flex overflow-hidden rounded-md border border-zinc-700 bg-zinc-900">
+                        <span className="inline-flex overflow-hidden rounded-md border border-[#2F3440] bg-[#1B1F27]">
                           <button
                             type="button"
-                            className={`px-2 py-0.5 text-[11px] ${requestViewMode === 'body' ? 'bg-zinc-700 text-zinc-100' : 'text-zinc-400 hover:text-zinc-200'}`}
+                            className={`px-2 py-0.5 text-[11px] ${requestViewMode === 'body' ? 'bg-[#3B404C] text-[#E8EAEE]' : 'text-[#9AA0AA] hover:text-[#D7DAE0]'}`}
                             onClick={() => setRequestViewMode('body')}
                           >
                             Body
                           </button>
                           <button
                             type="button"
-                            className={`px-2 py-0.5 text-[11px] ${requestViewMode === 'raw' ? 'bg-zinc-700 text-zinc-100' : 'text-zinc-400 hover:text-zinc-200'}`}
+                            className={`px-2 py-0.5 text-[11px] ${requestViewMode === 'raw' ? 'bg-[#3B404C] text-[#E8EAEE]' : 'text-[#9AA0AA] hover:text-[#D7DAE0]'}`}
                             onClick={() => setRequestViewMode('raw')}
                           >
                             Raw
                           </button>
                         </span>
-                        <span className="text-[11px] text-zinc-400">{fileNameFromPath(requestDoc.displayPath)}</span>
+                        <span className="text-[11px] text-[#8F949E]">{fileNameFromPath(requestDoc.displayPath)}</span>
                       </span>
                     </div>
-                    <div className="mb-2 rounded-md border border-zinc-700 bg-zinc-900 px-2.5 py-1.5 text-xs">
+                    <div className="mb-2 rounded-md border border-[#2F3440] bg-[#1A1D24] px-2.5 py-1.5 text-xs">
                       <span className="flex flex-wrap items-center gap-2">
                         <span
                           className={`inline-flex min-w-[3.75rem] items-center justify-center rounded px-2 py-0.5 font-semibold tracking-wide ring-1 ${methodBadgeClass(requestMethod || 'UNKNOWN')}`}
                         >
                           {requestMethod || 'REQ'}
                         </span>
-                        <code className="break-all text-zinc-200">{requestUrl || 'No URL detected in evidence'}</code>
+                        <code className="break-all text-[#D7DAE0]">{requestUrl || 'No URL detected in evidence'}</code>
                       </span>
                     </div>
                     <div>
-                      <div className="mb-1 text-[11px] font-semibold tracking-wide text-zinc-400 uppercase">
+                      <div className="mb-1 text-[11px] font-semibold tracking-wide text-[#8F949E] uppercase">
                         {requestViewMode === 'body' ? 'Body (read only)' : 'Raw (read only)'}
                       </div>
-                      <pre className="overflow-x-auto rounded-lg border border-zinc-800 bg-zinc-950 p-3 font-mono text-xs leading-relaxed text-zinc-100">
-                        {requestViewMode === 'body'
-                          ? toDisplayBody(extractRequestBody(requestDoc.parsedJson), requestDoc.text)
-                          : requestDoc.text}
-                      </pre>
+                      <CodePreview
+                        content={
+                          requestViewMode === 'body'
+                            ? toDisplayBody(extractRequestBody(requestDoc.parsedJson), requestDoc.text)
+                            : requestDoc.text
+                        }
+                        animationKey={`request-${requestViewMode}`}
+                      />
                     </div>
                   </section>
 
-                  <section className="rounded-lg border border-zinc-800 bg-zinc-900/60 p-3">
+                  <section className="rounded-lg border border-[#2A2E36] bg-[#12141A] p-3">
                     <div className="mb-2 flex items-center justify-between gap-2">
-                      <span className="text-xs font-semibold tracking-wide text-zinc-200 uppercase">Response</span>
-                      <span className="flex items-center gap-2 text-[11px] text-zinc-400">
-                        <span className="inline-flex overflow-hidden rounded-md border border-zinc-700 bg-zinc-900">
+                      <span className="text-xs font-semibold tracking-wide text-[#D7DAE0] uppercase">Response</span>
+                      <span className="flex items-center gap-2 text-[11px] text-[#8F949E]">
+                        <span className="inline-flex overflow-hidden rounded-md border border-[#2F3440] bg-[#1B1F27]">
                           <button
                             type="button"
-                            className={`px-2 py-0.5 text-[11px] ${responseViewMode === 'body' ? 'bg-zinc-700 text-zinc-100' : 'text-zinc-400 hover:text-zinc-200'}`}
+                            className={`px-2 py-0.5 text-[11px] ${responseViewMode === 'body' ? 'bg-[#3B404C] text-[#E8EAEE]' : 'text-[#9AA0AA] hover:text-[#D7DAE0]'}`}
                             onClick={() => setResponseViewMode('body')}
                           >
                             Body
                           </button>
                           <button
                             type="button"
-                            className={`px-2 py-0.5 text-[11px] ${responseViewMode === 'raw' ? 'bg-zinc-700 text-zinc-100' : 'text-zinc-400 hover:text-zinc-200'}`}
+                            className={`px-2 py-0.5 text-[11px] ${responseViewMode === 'raw' ? 'bg-[#3B404C] text-[#E8EAEE]' : 'text-[#9AA0AA] hover:text-[#D7DAE0]'}`}
                             onClick={() => setResponseViewMode('raw')}
                           >
                             Raw
@@ -887,14 +1018,17 @@ function EvidenceFileCard({ sourcePath, label, resolvedPath }: EvidenceNodeProps
                       </span>
                     </div>
                     <div>
-                      <div className="mb-1 text-[11px] font-semibold tracking-wide text-zinc-400 uppercase">
+                      <div className="mb-1 text-[11px] font-semibold tracking-wide text-[#8F949E] uppercase">
                         {responseViewMode === 'body' ? 'Body (read only)' : 'Raw (read only)'}
                       </div>
-                      <pre className="overflow-x-auto rounded-lg border border-zinc-800 bg-zinc-950 p-3 font-mono text-xs leading-relaxed text-zinc-100">
-                        {responseViewMode === 'body'
-                          ? toDisplayBody(extractResponseBody(responseDoc.parsedJson), responseDoc.text)
-                          : responseDoc.text}
-                      </pre>
+                      <CodePreview
+                        content={
+                          responseViewMode === 'body'
+                            ? toDisplayBody(extractResponseBody(responseDoc.parsedJson), responseDoc.text)
+                            : responseDoc.text
+                        }
+                        animationKey={`response-${responseViewMode}`}
+                      />
                     </div>
                   </section>
                 </div>
@@ -921,39 +1055,30 @@ function EvidenceFileCard({ sourcePath, label, resolvedPath }: EvidenceNodeProps
 
                   {requestDoc ? (
                     <TabsContent value="request">
-                      <pre className="overflow-x-auto rounded-lg border bg-muted/35 p-3 text-xs leading-relaxed">
-                        {requestDoc.text}
-                      </pre>
+                      <CodePreview content={requestDoc.text} />
                     </TabsContent>
                   ) : null}
 
                   {responseDoc ? (
                     <TabsContent value="response">
-                      <pre className="overflow-x-auto rounded-lg border bg-muted/35 p-3 text-xs leading-relaxed">
-                        {responseDoc.text}
-                      </pre>
+                      <CodePreview content={responseDoc.text} />
                     </TabsContent>
                   ) : null}
 
                   {currentDoc.parsedJson ? (
                     <TabsContent value="pretty">
-                      <pre className="overflow-x-auto rounded-lg border bg-muted/35 p-3 text-xs leading-relaxed">
-                        {prettyPrint(currentDoc.parsedJson)}
-                      </pre>
+                      <CodePreview content={prettyPrint(currentDoc.parsedJson)} />
                     </TabsContent>
                   ) : null}
 
                   <TabsContent value="raw">
-                    <pre className="overflow-x-auto rounded-lg border bg-muted/35 p-3 text-xs leading-relaxed">
-                      {currentDoc.text}
-                    </pre>
+                    <CodePreview content={currentDoc.text} />
                   </TabsContent>
                 </Tabs>
               )
             ) : null}
           </div>
 
-          <DialogFooter showCloseButton className="px-5" />
         </DialogContent>
       </Dialog>
     </>
