@@ -895,19 +895,19 @@ function CodePreview({ content, animationKey }: { content: string, animationKey?
 }
 
 function methodBadgeClass(method: string) {
-  if (method === 'GET') return 'bg-[#1D6D52]/30 text-[#6EE7B7] ring-[#1D6D52]'
-  if (method === 'POST') return 'bg-[#6B4E16]/40 text-[#FBBF24] ring-[#7C5A18]'
-  if (method === 'PUT' || method === 'PATCH') return 'bg-[#214A7A]/35 text-[#7DD3FC] ring-[#2D5F96]'
-  if (method === 'DELETE') return 'bg-[#6B1F2A]/35 text-[#FCA5A5] ring-[#7C2D3A]'
-  return 'bg-[#343A46] text-[#D7DAE0] ring-[#4A5160]'
+  if (method === 'GET') return 'bg-[#134E3A] text-[#D1FAE5] ring-[#22C55E]/40'
+  if (method === 'POST') return 'bg-[#4A3215] text-[#FEF3C7] ring-[#F59E0B]/40'
+  if (method === 'PUT' || method === 'PATCH') return 'bg-[#1E3A5F] text-[#DBEAFE] ring-[#3B82F6]/40'
+  if (method === 'DELETE') return 'bg-[#4C1D1D] text-[#FFE4E6] ring-[#EF4444]/40'
+  return 'bg-[#282D37] text-[#E2E8F0] ring-[#64748B]/40'
 }
 
 function responseStatusBadgeClass(statusCode: number | null) {
-  if (!statusCode) return 'bg-[#343A46] text-[#D7DAE0] ring-[#4A5160]'
-  if (statusCode >= 200 && statusCode < 300) return 'bg-[#1D6D52]/30 text-[#6EE7B7] ring-[#1D6D52]'
-  if (statusCode >= 300 && statusCode < 400) return 'bg-[#214A7A]/35 text-[#7DD3FC] ring-[#2D5F96]'
-  if (statusCode >= 400 && statusCode < 500) return 'bg-[#6B2A1B]/45 text-[#FDBA74] ring-[#7C3420]'
-  return 'bg-[#6B1F2A]/35 text-[#FCA5A5] ring-[#7C2D3A]'
+  if (!statusCode) return 'bg-[#282D37] text-[#E2E8F0] ring-[#64748B]/40'
+  if (statusCode >= 200 && statusCode < 300) return 'bg-[#134E3A] text-[#D1FAE5] ring-[#22C55E]/40'
+  if (statusCode >= 300 && statusCode < 400) return 'bg-[#1E3A5F] text-[#DBEAFE] ring-[#3B82F6]/40'
+  if (statusCode >= 400 && statusCode < 500) return 'bg-[#4A2512] text-[#FFEDD5] ring-[#F97316]/40'
+  return 'bg-[#4C1D1D] text-[#FFE4E6] ring-[#EF4444]/40'
 }
 
 function formatBytes(bytes: number) {
@@ -942,7 +942,7 @@ function NewmanEvidenceViewer({ data }: { data: ParsedNewmanEvidence }) {
   return (
     <div className="space-y-3">
       {data.testName ? (
-        <div className="flex items-start gap-3 rounded-xl border border-border/80 bg-muted/20 px-4 py-3">
+        <div className="flex items-start gap-3 rounded-xl border border-border/80 bg-muted/20 px-4 py-3 animate-in fade-in-0 slide-in-from-top-1 duration-300">
           <FlaskConical className="mt-0.5 size-4 shrink-0 text-primary" />
           <div className="min-w-0 flex-1">
             <div className="text-sm font-bold text-foreground">{data.testName}</div>
@@ -971,23 +971,23 @@ function NewmanEvidenceViewer({ data }: { data: ParsedNewmanEvidence }) {
         </div>
       ) : null}
 
-      <div className="flex items-center gap-2 rounded-lg border border-border/80 bg-card px-3 py-2">
+      <div className="flex items-center gap-2 rounded-lg border border-border/80 bg-card px-3 py-2 animate-in fade-in-0 slide-in-from-bottom-1 duration-300 fill-mode-both" style={{ animationDelay: '80ms' }}>
         <span
-          className={`inline-flex min-w-[4rem] items-center justify-center rounded-md px-2.5 py-1 text-xs font-bold tracking-wide ring-1 ${methodBadgeClass(data.method)}`}
+          className={`inline-flex min-w-[4rem] items-center justify-center rounded-md px-2.5 py-1 text-xs font-bold tracking-wide ring-1 transition-all duration-200 hover:scale-105 hover:brightness-125 ${methodBadgeClass(data.method)}`}
         >
           {data.method}
         </span>
         <code className="min-w-0 flex-1 break-all text-xs text-foreground">{data.fullUrl}</code>
         <button
           type="button"
-          className="shrink-0 rounded p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+          className="shrink-0 rounded p-1 text-muted-foreground transition-all duration-200 hover:bg-muted hover:text-foreground hover:scale-110 active:scale-95"
           title="Copy URL"
           onClick={() => copyToClipboard(data.fullUrl, 'url')}
         >
-          {copied === 'url' ? <CheckCircle2 className="size-3.5 text-emerald-500" /> : <Copy className="size-3.5" />}
+          {copied === 'url' ? <CheckCircle2 className="size-3.5 text-emerald-500 animate-in zoom-in-50 duration-200" /> : <Copy className="size-3.5" />}
         </button>
         <span
-          className={`inline-flex items-center rounded-md px-2 py-1 text-xs font-bold ring-1 ${responseStatusBadgeClass(statusCodeNum)}`}
+          className={`inline-flex items-center rounded-md px-2 py-1 text-xs font-bold ring-1 transition-all duration-200 hover:scale-105 hover:brightness-125 ${responseStatusBadgeClass(statusCodeNum)}`}
         >
           {statusCodeNum} {data.responseStatus}
         </span>
@@ -1007,24 +1007,26 @@ function NewmanEvidenceViewer({ data }: { data: ParsedNewmanEvidence }) {
               key={tab.key}
               type="button"
               onClick={() => setActiveTab(tab.key)}
-              className={`relative flex items-center gap-1.5 px-3 py-2.5 text-xs font-semibold transition-colors ${
+              className={`relative flex items-center gap-1.5 px-3 py-2.5 text-xs font-semibold transition-all duration-200 ${
                 activeTab === tab.key
                   ? 'text-primary'
-                  : 'text-muted-foreground hover:text-foreground'
+                  : 'text-muted-foreground hover:text-foreground hover:bg-muted/40'
               }`}
             >
               <tab.icon className="size-3.5" />
               {tab.label}
-              {activeTab === tab.key ? (
-                <span className="absolute right-3 bottom-0 left-3 h-[2px] rounded-full bg-primary" />
-              ) : null}
+              <span
+                className={`absolute right-3 bottom-0 left-3 h-[2px] rounded-full bg-primary transition-all duration-250 ${
+                  activeTab === tab.key ? 'scale-x-100 opacity-100' : 'scale-x-0 opacity-0'
+                }`}
+              />
             </button>
           ))}
         </div>
 
         <div className="max-h-[calc(90vh-280px)] overflow-auto p-3">
           {activeTab === 'response' ? (
-            <div className="space-y-2">
+            <div key="response" className="space-y-2 animate-in fade-in-0 duration-200">
               <div className="flex items-center gap-1">
                 {(['pretty', 'raw', 'headers'] as const).map((mode) => (
                   <button
@@ -1042,7 +1044,7 @@ function NewmanEvidenceViewer({ data }: { data: ParsedNewmanEvidence }) {
                 ))}
                 <button
                   type="button"
-                  className="ml-auto rounded p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                  className="ml-auto rounded p-1 text-muted-foreground transition-all duration-200 hover:bg-muted hover:text-foreground hover:scale-110 active:scale-95"
                   title="Copy response body"
                   onClick={() =>
                     copyToClipboard(
@@ -1056,7 +1058,7 @@ function NewmanEvidenceViewer({ data }: { data: ParsedNewmanEvidence }) {
                   }
                 >
                   {copied === 'response' ? (
-                    <CheckCircle2 className="size-3.5 text-emerald-500" />
+                    <CheckCircle2 className="size-3.5 text-emerald-500 animate-in zoom-in-50 duration-200" />
                   ) : (
                     <Copy className="size-3.5" />
                   )}
@@ -1090,7 +1092,7 @@ function NewmanEvidenceViewer({ data }: { data: ParsedNewmanEvidence }) {
               )}
             </div>
           ) : activeTab === 'request' ? (
-            <div className="space-y-2">
+            <div key="request" className="space-y-2 animate-in fade-in-0 duration-200">
               <div className="flex items-center gap-1">
                 {(['body', 'headers', 'url'] as const).map((mode) => (
                   <button
@@ -1108,7 +1110,7 @@ function NewmanEvidenceViewer({ data }: { data: ParsedNewmanEvidence }) {
                 ))}
                 <button
                   type="button"
-                  className="ml-auto rounded p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                  className="ml-auto rounded p-1 text-muted-foreground transition-all duration-200 hover:bg-muted hover:text-foreground hover:scale-110 active:scale-95"
                   title="Copy request body"
                   onClick={() =>
                     copyToClipboard(
@@ -1122,7 +1124,7 @@ function NewmanEvidenceViewer({ data }: { data: ParsedNewmanEvidence }) {
                   }
                 >
                   {copied === 'request' ? (
-                    <CheckCircle2 className="size-3.5 text-emerald-500" />
+                    <CheckCircle2 className="size-3.5 text-emerald-500 animate-in zoom-in-50 duration-200" />
                   ) : (
                     <Copy className="size-3.5" />
                   )}
@@ -1175,7 +1177,7 @@ function NewmanEvidenceViewer({ data }: { data: ParsedNewmanEvidence }) {
               )}
             </div>
           ) : activeTab === 'assertions' ? (
-            <div className="space-y-1">
+            <div key="assertions" className="space-y-1 animate-in fade-in-0 duration-200">
               {data.assertions.length === 0 ? (
                 <p className="py-4 text-center text-sm text-muted-foreground">No assertions recorded.</p>
               ) : (
@@ -1210,7 +1212,7 @@ function NewmanEvidenceViewer({ data }: { data: ParsedNewmanEvidence }) {
               )}
             </div>
           ) : (
-            <div className="space-y-2">
+            <div key="scripts" className="space-y-2 animate-in fade-in-0 duration-200">
               {data.testScripts.length === 0 ? (
                 <p className="py-4 text-center text-sm text-muted-foreground">No test scripts recorded.</p>
               ) : (
@@ -1448,22 +1450,22 @@ function EvidenceFileCard({ sourcePath, label, resolvedPath }: EvidenceNodeProps
               <NewmanEvidenceViewer data={newmanData} />
             ) : currentDoc ? (
               requestDoc && responseDoc ? (
-                <div className="space-y-3 rounded-xl border border-[#2A2E36] bg-[#15171C] p-3 text-[#D7DAE0]">
-                  <section className="rounded-lg border border-[#2A2E36] bg-[#12141A] p-3">
+                <div className="space-y-3 rounded-xl border border-[#2A2E36] bg-[#15171C] p-3 text-[#D7DAE0] animate-in fade-in-0 slide-in-from-bottom-2 duration-300">
+                  <section className="rounded-lg border border-[#2A2E36] bg-[#12141A] p-3 animate-in fade-in-0 duration-300 fill-mode-both" style={{ animationDelay: '50ms' }}>
                     <div className="mb-2 flex items-center justify-between gap-2">
                       <span className="text-xs font-semibold tracking-wide text-[#D7DAE0] uppercase">Request</span>
                       <span className="flex items-center gap-2">
                         <span className="inline-flex overflow-hidden rounded-md border border-[#2F3440] bg-[#1B1F27]">
                           <button
                             type="button"
-                            className={`px-2 py-0.5 text-[11px] ${requestViewMode === 'body' ? 'bg-[#3B404C] text-[#E8EAEE]' : 'text-[#9AA0AA] hover:text-[#D7DAE0]'}`}
+                            className={`px-2 py-0.5 text-[11px] transition-all duration-150 ${requestViewMode === 'body' ? 'bg-[#3B404C] text-[#E8EAEE]' : 'text-[#9AA0AA] hover:text-[#D7DAE0]'}`}
                             onClick={() => setRequestViewMode('body')}
                           >
                             Body
                           </button>
                           <button
                             type="button"
-                            className={`px-2 py-0.5 text-[11px] ${requestViewMode === 'raw' ? 'bg-[#3B404C] text-[#E8EAEE]' : 'text-[#9AA0AA] hover:text-[#D7DAE0]'}`}
+                            className={`px-2 py-0.5 text-[11px] transition-all duration-150 ${requestViewMode === 'raw' ? 'bg-[#3B404C] text-[#E8EAEE]' : 'text-[#9AA0AA] hover:text-[#D7DAE0]'}`}
                             onClick={() => setRequestViewMode('raw')}
                           >
                             Raw
@@ -1475,7 +1477,7 @@ function EvidenceFileCard({ sourcePath, label, resolvedPath }: EvidenceNodeProps
                     <div className="mb-2 rounded-md border border-[#2F3440] bg-[#1A1D24] px-2.5 py-1.5 text-xs">
                       <span className="flex flex-wrap items-center gap-2">
                         <span
-                          className={`inline-flex min-w-[3.75rem] items-center justify-center rounded px-2 py-0.5 font-semibold tracking-wide ring-1 ${methodBadgeClass(requestMethod || 'UNKNOWN')}`}
+                          className={`inline-flex min-w-[3.75rem] items-center justify-center rounded px-2 py-0.5 font-semibold tracking-wide ring-1 transition-all duration-200 hover:scale-105 hover:brightness-125 ${methodBadgeClass(requestMethod || 'UNKNOWN')}`}
                         >
                           {requestMethod || 'REQ'}
                         </span>
@@ -1497,28 +1499,28 @@ function EvidenceFileCard({ sourcePath, label, resolvedPath }: EvidenceNodeProps
                     </div>
                   </section>
 
-                  <section className="rounded-lg border border-[#2A2E36] bg-[#12141A] p-3">
+                  <section className="rounded-lg border border-[#2A2E36] bg-[#12141A] p-3 animate-in fade-in-0 duration-300 fill-mode-both" style={{ animationDelay: '120ms' }}>
                     <div className="mb-2 flex items-center justify-between gap-2">
                       <span className="text-xs font-semibold tracking-wide text-[#D7DAE0] uppercase">Response</span>
                       <span className="flex items-center gap-2 text-[11px] text-[#8F949E]">
                         <span className="inline-flex overflow-hidden rounded-md border border-[#2F3440] bg-[#1B1F27]">
                           <button
                             type="button"
-                            className={`px-2 py-0.5 text-[11px] ${responseViewMode === 'body' ? 'bg-[#3B404C] text-[#E8EAEE]' : 'text-[#9AA0AA] hover:text-[#D7DAE0]'}`}
+                            className={`px-2 py-0.5 text-[11px] transition-all duration-150 ${responseViewMode === 'body' ? 'bg-[#3B404C] text-[#E8EAEE]' : 'text-[#9AA0AA] hover:text-[#D7DAE0]'}`}
                             onClick={() => setResponseViewMode('body')}
                           >
                             Body
                           </button>
                           <button
                             type="button"
-                            className={`px-2 py-0.5 text-[11px] ${responseViewMode === 'raw' ? 'bg-[#3B404C] text-[#E8EAEE]' : 'text-[#9AA0AA] hover:text-[#D7DAE0]'}`}
+                            className={`px-2 py-0.5 text-[11px] transition-all duration-150 ${responseViewMode === 'raw' ? 'bg-[#3B404C] text-[#E8EAEE]' : 'text-[#9AA0AA] hover:text-[#D7DAE0]'}`}
                             onClick={() => setResponseViewMode('raw')}
                           >
                             Raw
                           </button>
                         </span>
                         <span
-                          className={`rounded px-1.5 py-0.5 font-semibold ring-1 ${responseStatusBadgeClass(Number.parseInt(responseStatus || '', 10) || null)}`}
+                          className={`rounded px-1.5 py-0.5 font-semibold ring-1 transition-all duration-200 hover:scale-105 hover:brightness-125 ${responseStatusBadgeClass(Number.parseInt(responseStatus || '', 10) || null)}`}
                         >
                           {responseStatus || 'N/A'}
                         </span>
