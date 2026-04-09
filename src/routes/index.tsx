@@ -28,6 +28,14 @@ import {
   CommandSeparator,
   CommandShortcut,
 } from '#/components/ui/command'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '#/components/ui/dialog'
 import { Input } from '#/components/ui/input'
 import { ScrollArea } from '#/components/ui/scroll-area'
 import {
@@ -266,28 +274,689 @@ function textFromNode(children: ReactNode) {
 type EvidenceNodeProps = {
   sourcePath: string
   label: string
+  resolvedPath: string
 }
 
-function EvidenceFileCard({ sourcePath, label }: EvidenceNodeProps) {
-  const displayPath = label || sourcePath
+type LoadedEvidenceDoc = {
+  sourcePath: string
+  displayPath: string
+  kind: string
+  text: string
+  parsedJson: unknown | null
+}
+
+function isHttpPath(pathValue: string) {
+  return /^https?:\/\//i.test(pathValue)
+}
+
+function canPreviewEvidence(kind: string, sourcePath: string) {
+  if (isHttpPath(sourcePath)) {
+    return false
+  }
+
+  return kind === 'json' || kind === 'log' || kind === 'xml' || kind === 'md' || kind === 'tabular'
+}
+
+function normalizeObject(value: unknown) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return null
+  }
+  return value as Record<string, unknown>
+}
+
+function findValueCaseInsensitive(record: Record<string, unknown>, keys: string[]) {
+  const map = new Map(Object.entries(record).map(([key, value]) => [key.toLowerCase(), value]))
+  for (const key of keys) {
+    if (map.has(key.toLowerCase())) {
+      return map.get(key.toLowerCase())
+    }
+  }
+  return undefined
+}
+
+function extractRequestResponse(parsedJson: unknown) {
+  const record = normalizeObject(parsedJson)
+  if (!record) {
+    return {
+      request: undefined,
+      response: undefined,
+    }
+  }
+
+  const request = findValueCaseInsensitive(record, [
+    'request',
+    'request_payload',
+    'requestpayload',
+    'payload',
+    'input',
+    'req',
+  ])
+  const response = findValueCaseInsensitive(record, [
+    'response',
+    'response_body',
+    'responsebody',
+    'result',
+    'output',
+    'res',
+  ])
+
+  return { request, response }
+}
+
+function evidenceRole(pathValue: string) {
+  const fileName = fileNameFromPath(pathValue).toLowerCase()
+  if (/(^|[-_.])(request|req|payload|input)([-_.]|$)/i.test(fileName)) {
+    return 'request'
+  }
+  if (/(^|[-_.])(response|res|result|output)([-_.]|$)/i.test(fileName)) {
+    return 'response'
+  }
+  return null
+}
+
+function replaceFirstCaseInsensitive(value: string, from: string, to: string) {
+  return value.replace(new RegExp(from, 'i'), to)
+}
+
+function buildCounterpartCandidates(pathValue: string) {
+  const cleaned = cleanPath(pathValue)
+  if (!cleaned || isHttpPath(cleaned)) {
+    return []
+  }
+
+  const slashIndex = cleaned.lastIndexOf('/')
+  const directory = slashIndex >= 0 ? cleaned.slice(0, slashIndex + 1) : ''
+  const fileName = slashIndex >= 0 ? cleaned.slice(slashIndex + 1) : cleaned
+  const dotIndex = fileName.lastIndexOf('.')
+  const baseName = dotIndex >= 0 ? fileName.slice(0, dotIndex) : fileName
+  const extension = dotIndex >= 0 ? fileName.slice(dotIndex) : ''
+  const baseNameLower = baseName.toLowerCase()
+
+  const swaps: Array<[string, string]> = [
+    ['request', 'response'],
+    ['response', 'request'],
+    ['req', 'res'],
+    ['res', 'req'],
+    ['input', 'output'],
+    ['output', 'input'],
+    ['payload', 'response'],
+    ['result', 'request'],
+  ]
+
+  const candidates: string[] = []
+  for (const [from, to] of swaps) {
+    if (!baseNameLower.includes(from)) {
+      continue
+    }
+
+    const swapped = replaceFirstCaseInsensitive(baseName, from, to)
+    candidates.push(`${directory}${swapped}${extension}`)
+    if (extension.toLowerCase() === '.json') {
+      candidates.push(`${directory}${swapped}.log`)
+      candidates.push(`${directory}${swapped}.txt`)
+    }
+  }
+
+  return candidates.filter((candidate, index) => candidate !== cleaned && candidates.indexOf(candidate) === index)
+}
+
+async function loadEvidenceDocument(sourcePath: string, displayPath: string, kind: string): Promise<LoadedEvidenceDoc> {
+  const response = await fetch(sourcePath, { cache: 'no-store' })
+  if (!response.ok) {
+    throw new Error(`Unable to load evidence (${response.status})`)
+  }
+
+  const text = await response.text()
+  let parsedJson: unknown | null = null
+
+  if (kind === 'json') {
+    try {
+      parsedJson = JSON.parse(text)
+    } catch {
+      parsedJson = null
+    }
+  }
+
+  return {
+    sourcePath,
+    displayPath,
+    kind,
+    text,
+    parsedJson,
+  }
+}
+
+function prettyPrint(value: unknown) {
+  try {
+    return JSON.stringify(value, null, 2)
+  } catch {
+    return String(value)
+  }
+}
+
+function asNonEmptyString(value: unknown) {
+  if (typeof value !== 'string') {
+    return null
+  }
+  const trimmed = value.trim()
+  return trimmed ? trimmed : null
+}
+
+function findRequestUrl(value: unknown): string | null {
+  if (!value) {
+    return null
+  }
+
+  const asText = asNonEmptyString(value)
+  if (asText) {
+    if (/^https?:\/\//i.test(asText) || asText.startsWith('/')) {
+      return asText
+    }
+    const inlineUrl = asText.match(/https?:\/\/[^\s"'`]+/i)?.[0]
+    if (inlineUrl) {
+      return inlineUrl
+    }
+    const pathMatch = asText.match(/\b\/[A-Za-z0-9._~:/?#[\]@!$&'()*+,;=%-]*/)?.[0]
+    if (pathMatch) {
+      return pathMatch
+    }
+  }
+
+  const record = normalizeObject(value)
+  if (!record) {
+    return null
+  }
+
+  const direct = findValueCaseInsensitive(record, [
+    'url',
+    'request_url',
+    'requesturl',
+    'endpoint',
+    'uri',
+    'path',
+  ])
+  const directText = asNonEmptyString(direct)
+  if (directText && (/^https?:\/\//i.test(directText) || directText.startsWith('/'))) {
+    return directText
+  }
+
+  const nestedRequest = findValueCaseInsensitive(record, ['request', 'req', 'payload', 'input'])
+  if (nestedRequest) {
+    const nestedUrl = findRequestUrl(nestedRequest)
+    if (nestedUrl) {
+      return nestedUrl
+    }
+  }
+
+  return null
+}
+
+function findResponseStatus(value: unknown): string | null {
+  const record = normalizeObject(value)
+  if (!record) {
+    return null
+  }
+
+  const statusValue = findValueCaseInsensitive(record, ['status', 'status_code', 'statuscode', 'code'])
+  if (typeof statusValue === 'number' && Number.isFinite(statusValue)) {
+    return String(statusValue)
+  }
+  if (typeof statusValue === 'string' && statusValue.trim()) {
+    return statusValue.trim()
+  }
+
+  const nestedResponse = findValueCaseInsensitive(record, ['response', 'res', 'result', 'output'])
+  if (nestedResponse) {
+    return findResponseStatus(nestedResponse)
+  }
+
+  return null
+}
+
+function findRequestMethod(value: unknown): string | null {
+  const normalizeMethod = (methodRaw: string) => {
+    const method = methodRaw.trim().toUpperCase()
+    return /^(GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS)$/.test(method) ? method : null
+  }
+
+  const asText = asNonEmptyString(value)
+  if (asText) {
+    const matched = asText.match(/\b(GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS)\b/i)?.[0]
+    if (matched) {
+      return normalizeMethod(matched)
+    }
+  }
+
+  const record = normalizeObject(value)
+  if (!record) {
+    return null
+  }
+
+  const direct = findValueCaseInsensitive(record, ['method', 'http_method', 'request_method', 'verb'])
+  if (typeof direct === 'string') {
+    const normalized = normalizeMethod(direct)
+    if (normalized) {
+      return normalized
+    }
+  }
+
+  const nestedRequest = findValueCaseInsensitive(record, ['request', 'req', 'payload', 'input'])
+  if (nestedRequest) {
+    return findRequestMethod(nestedRequest)
+  }
+
+  return null
+}
+
+function extractRequestBody(value: unknown): unknown {
+  const record = normalizeObject(value)
+  if (!record) {
+    return value
+  }
+
+  const directBody = findValueCaseInsensitive(record, [
+    'body',
+    'request_body',
+    'requestbody',
+    'data',
+    'payload',
+    'input',
+  ])
+  if (directBody !== undefined) {
+    return directBody
+  }
+
+  const nestedRequest = findValueCaseInsensitive(record, ['request', 'req'])
+  if (nestedRequest !== undefined) {
+    return extractRequestBody(nestedRequest)
+  }
+
+  return value
+}
+
+function extractResponseBody(value: unknown): unknown {
+  const record = normalizeObject(value)
+  if (!record) {
+    return value
+  }
+
+  const directBody = findValueCaseInsensitive(record, [
+    'body',
+    'response_body',
+    'responsebody',
+    'data',
+    'result',
+    'output',
+  ])
+  if (directBody !== undefined) {
+    return directBody
+  }
+
+  const nestedResponse = findValueCaseInsensitive(record, ['response', 'res'])
+  if (nestedResponse !== undefined) {
+    return extractResponseBody(nestedResponse)
+  }
+
+  return value
+}
+
+function toDisplayBody(value: unknown, fallbackText: string) {
+  if (value === undefined || value === null) {
+    return fallbackText
+  }
+
+  if (typeof value === 'string') {
+    return value
+  }
+
+  return prettyPrint(value)
+}
+
+function methodBadgeClass(method: string) {
+  if (method === 'GET') return 'bg-emerald-500/15 text-emerald-300 ring-emerald-500/30'
+  if (method === 'POST') return 'bg-amber-500/15 text-amber-300 ring-amber-500/30'
+  if (method === 'PUT' || method === 'PATCH') return 'bg-sky-500/15 text-sky-300 ring-sky-500/30'
+  if (method === 'DELETE') return 'bg-rose-500/15 text-rose-300 ring-rose-500/30'
+  return 'bg-zinc-500/15 text-zinc-200 ring-zinc-500/30'
+}
+
+function responseStatusBadgeClass(statusCode: number | null) {
+  if (!statusCode) return 'bg-zinc-500/15 text-zinc-200 ring-zinc-500/30'
+  if (statusCode >= 200 && statusCode < 300) return 'bg-emerald-500/15 text-emerald-300 ring-emerald-500/30'
+  if (statusCode >= 300 && statusCode < 400) return 'bg-sky-500/15 text-sky-300 ring-sky-500/30'
+  if (statusCode >= 400 && statusCode < 500) return 'bg-orange-500/15 text-orange-300 ring-orange-500/30'
+  return 'bg-rose-500/15 text-rose-300 ring-rose-500/30'
+}
+
+function EvidenceFileCard({ sourcePath, label, resolvedPath }: EvidenceNodeProps) {
+  const displayPath = label || resolvedPath || sourcePath
   const kind = evidenceKind(displayPath)
+  const previewable = canPreviewEvidence(kind, sourcePath)
+  const [dialogOpen, setDialogOpen] = useState(false)
+  const [loadingViewer, setLoadingViewer] = useState(false)
+  const [viewerError, setViewerError] = useState('')
+  const [currentDoc, setCurrentDoc] = useState<LoadedEvidenceDoc | null>(null)
+  const [requestDoc, setRequestDoc] = useState<LoadedEvidenceDoc | null>(null)
+  const [responseDoc, setResponseDoc] = useState<LoadedEvidenceDoc | null>(null)
+  const [requestUrl, setRequestUrl] = useState<string | null>(null)
+  const [requestMethod, setRequestMethod] = useState<string | null>(null)
+  const [responseStatus, setResponseStatus] = useState<string | null>(null)
+  const [requestViewMode, setRequestViewMode] = useState<'body' | 'raw'>('body')
+  const [responseViewMode, setResponseViewMode] = useState<'body' | 'raw'>('body')
+
+  useEffect(() => {
+    if (!dialogOpen || !previewable) {
+      return
+    }
+
+    let cancelled = false
+    const candidates = buildCounterpartCandidates(resolvedPath)
+
+    const load = async () => {
+      setLoadingViewer(true)
+      setViewerError('')
+      setCurrentDoc(null)
+      setRequestDoc(null)
+      setResponseDoc(null)
+      setRequestUrl(null)
+      setRequestMethod(null)
+      setResponseStatus(null)
+      setRequestViewMode('body')
+      setResponseViewMode('body')
+
+      try {
+        const mainDoc = await loadEvidenceDocument(sourcePath, displayPath, kind)
+        if (cancelled) {
+          return
+        }
+
+        let reqDoc: LoadedEvidenceDoc | null = null
+        let resDoc: LoadedEvidenceDoc | null = null
+
+        const extracted = extractRequestResponse(mainDoc.parsedJson)
+        if (extracted.request !== undefined) {
+          reqDoc = {
+            ...mainDoc,
+            text: prettyPrint(extracted.request),
+            parsedJson: extracted.request,
+            displayPath: `${displayPath}#request`,
+          }
+        }
+        if (extracted.response !== undefined) {
+          resDoc = {
+            ...mainDoc,
+            text: prettyPrint(extracted.response),
+            parsedJson: extracted.response,
+            displayPath: `${displayPath}#response`,
+          }
+        }
+
+        if (!reqDoc && !resDoc) {
+          for (const candidatePath of candidates) {
+            const candidateSourcePath = toFileHref(candidatePath)
+            const candidateKind = evidenceKind(candidatePath)
+            if (!canPreviewEvidence(candidateKind, candidateSourcePath)) {
+              continue
+            }
+
+            try {
+              const candidateDoc = await loadEvidenceDocument(
+                candidateSourcePath,
+                candidatePath,
+                candidateKind,
+              )
+              const role = evidenceRole(candidatePath)
+              if (role === 'request' && !reqDoc) {
+                reqDoc = candidateDoc
+              } else if (role === 'response' && !resDoc) {
+                resDoc = candidateDoc
+              }
+
+              if (reqDoc && resDoc) {
+                break
+              }
+            } catch {
+              continue
+            }
+          }
+        }
+
+        const currentRole = evidenceRole(displayPath)
+        if (currentRole === 'request' && !reqDoc) {
+          reqDoc = mainDoc
+        } else if (currentRole === 'response' && !resDoc) {
+          resDoc = mainDoc
+        }
+
+        setCurrentDoc(mainDoc)
+        setRequestDoc(reqDoc)
+        setResponseDoc(resDoc)
+        setRequestUrl(
+          findRequestUrl(reqDoc?.parsedJson ?? reqDoc?.text ?? null)
+          ?? findRequestUrl(mainDoc.parsedJson)
+          ?? findRequestUrl(mainDoc.text),
+        )
+        setRequestMethod(
+          findRequestMethod(reqDoc?.parsedJson ?? reqDoc?.text ?? null)
+          ?? findRequestMethod(mainDoc.parsedJson)
+          ?? findRequestMethod(mainDoc.text),
+        )
+        setResponseStatus(
+          findResponseStatus(resDoc?.parsedJson ?? null)
+          ?? findResponseStatus(mainDoc.parsedJson),
+        )
+      } catch (error) {
+        setViewerError((error as Error).message)
+      } finally {
+        if (!cancelled) {
+          setLoadingViewer(false)
+        }
+      }
+    }
+
+    void load()
+
+    return () => {
+      cancelled = true
+    }
+  }, [dialogOpen, displayPath, kind, previewable, resolvedPath, sourcePath])
 
   return (
-    <a href={sourcePath} target="_blank" rel="noopener noreferrer" className="my-2 block no-underline">
-      <Card size="sm" className="border border-border/80 py-0 shadow-none transition-colors hover:bg-muted/30">
+    <>
+      <Card size="sm" className="my-2 border border-border/80 py-0 shadow-none transition-colors hover:bg-muted/30">
         <CardContent className="flex items-center gap-3 py-3">
           <Badge variant="outline" className="font-semibold">
             {evidenceBadge(kind)}
           </Badge>
-          <span className="flex min-w-0 flex-col gap-0.5">
+          <span className="flex min-w-0 flex-1 flex-col gap-0.5">
             <span className="truncate text-sm font-semibold text-primary">
               {fileNameFromPath(displayPath) || 'Open evidence file'}
             </span>
             <span className="truncate text-xs text-muted-foreground">{displayPath}</span>
           </span>
+          <span className="flex shrink-0 items-center gap-1.5">
+            <a
+              href={sourcePath}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex h-7 items-center justify-center rounded-[min(var(--radius-md),12px)] border border-border bg-background px-2.5 text-[0.8rem] font-medium text-foreground no-underline transition-colors hover:bg-muted dark:border-input dark:bg-input/30 dark:hover:bg-input/50"
+            >
+              Open file
+            </a>
+            {previewable ? (
+              <Button type="button" size="sm" onClick={() => setDialogOpen(true)}>
+                View payload
+              </Button>
+            ) : null}
+          </span>
         </CardContent>
       </Card>
-    </a>
+
+      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+        <DialogContent className="max-w-[min(1100px,calc(100%-2rem))] gap-3 p-0" showCloseButton>
+          <DialogHeader className="border-b px-5 pt-5 pb-3">
+            <DialogTitle className="truncate">{fileNameFromPath(displayPath) || 'Evidence Viewer'}</DialogTitle>
+            <DialogDescription className="truncate font-mono text-xs">{displayPath}</DialogDescription>
+          </DialogHeader>
+
+          <div className="max-h-[75vh] overflow-auto px-5 pb-2">
+            {loadingViewer ? (
+              <div className="space-y-2 py-1">
+                <Skeleton className="h-8 w-48" />
+                <Skeleton className="h-72 w-full" />
+              </div>
+            ) : viewerError ? (
+              <Alert>
+                <AlertTitle>Unable to load evidence</AlertTitle>
+                <AlertDescription>{viewerError}</AlertDescription>
+              </Alert>
+            ) : currentDoc ? (
+              requestDoc && responseDoc ? (
+                <div className="space-y-3 rounded-xl border border-zinc-800 bg-zinc-950 p-3 text-zinc-100">
+                  <section className="rounded-lg border border-zinc-800 bg-zinc-900/60 p-3">
+                    <div className="mb-2 flex items-center justify-between gap-2">
+                      <span className="text-xs font-semibold tracking-wide text-zinc-200 uppercase">Request</span>
+                      <span className="flex items-center gap-2">
+                        <span className="inline-flex overflow-hidden rounded-md border border-zinc-700 bg-zinc-900">
+                          <button
+                            type="button"
+                            className={`px-2 py-0.5 text-[11px] ${requestViewMode === 'body' ? 'bg-zinc-700 text-zinc-100' : 'text-zinc-400 hover:text-zinc-200'}`}
+                            onClick={() => setRequestViewMode('body')}
+                          >
+                            Body
+                          </button>
+                          <button
+                            type="button"
+                            className={`px-2 py-0.5 text-[11px] ${requestViewMode === 'raw' ? 'bg-zinc-700 text-zinc-100' : 'text-zinc-400 hover:text-zinc-200'}`}
+                            onClick={() => setRequestViewMode('raw')}
+                          >
+                            Raw
+                          </button>
+                        </span>
+                        <span className="text-[11px] text-zinc-400">{fileNameFromPath(requestDoc.displayPath)}</span>
+                      </span>
+                    </div>
+                    <div className="mb-2 rounded-md border border-zinc-700 bg-zinc-900 px-2.5 py-1.5 text-xs">
+                      <span className="flex flex-wrap items-center gap-2">
+                        <span
+                          className={`inline-flex min-w-[3.75rem] items-center justify-center rounded px-2 py-0.5 font-semibold tracking-wide ring-1 ${methodBadgeClass(requestMethod || 'UNKNOWN')}`}
+                        >
+                          {requestMethod || 'REQ'}
+                        </span>
+                        <code className="break-all text-zinc-200">{requestUrl || 'No URL detected in evidence'}</code>
+                      </span>
+                    </div>
+                    <div>
+                      <div className="mb-1 text-[11px] font-semibold tracking-wide text-zinc-400 uppercase">
+                        {requestViewMode === 'body' ? 'Body (read only)' : 'Raw (read only)'}
+                      </div>
+                      <pre className="overflow-x-auto rounded-lg border border-zinc-800 bg-zinc-950 p-3 font-mono text-xs leading-relaxed text-zinc-100">
+                        {requestViewMode === 'body'
+                          ? toDisplayBody(extractRequestBody(requestDoc.parsedJson), requestDoc.text)
+                          : requestDoc.text}
+                      </pre>
+                    </div>
+                  </section>
+
+                  <section className="rounded-lg border border-zinc-800 bg-zinc-900/60 p-3">
+                    <div className="mb-2 flex items-center justify-between gap-2">
+                      <span className="text-xs font-semibold tracking-wide text-zinc-200 uppercase">Response</span>
+                      <span className="flex items-center gap-2 text-[11px] text-zinc-400">
+                        <span className="inline-flex overflow-hidden rounded-md border border-zinc-700 bg-zinc-900">
+                          <button
+                            type="button"
+                            className={`px-2 py-0.5 text-[11px] ${responseViewMode === 'body' ? 'bg-zinc-700 text-zinc-100' : 'text-zinc-400 hover:text-zinc-200'}`}
+                            onClick={() => setResponseViewMode('body')}
+                          >
+                            Body
+                          </button>
+                          <button
+                            type="button"
+                            className={`px-2 py-0.5 text-[11px] ${responseViewMode === 'raw' ? 'bg-zinc-700 text-zinc-100' : 'text-zinc-400 hover:text-zinc-200'}`}
+                            onClick={() => setResponseViewMode('raw')}
+                          >
+                            Raw
+                          </button>
+                        </span>
+                        <span
+                          className={`rounded px-1.5 py-0.5 font-semibold ring-1 ${responseStatusBadgeClass(Number.parseInt(responseStatus || '', 10) || null)}`}
+                        >
+                          {responseStatus || 'N/A'}
+                        </span>
+                        <span>{fileNameFromPath(responseDoc.displayPath)}</span>
+                      </span>
+                    </div>
+                    <div>
+                      <div className="mb-1 text-[11px] font-semibold tracking-wide text-zinc-400 uppercase">
+                        {responseViewMode === 'body' ? 'Body (read only)' : 'Raw (read only)'}
+                      </div>
+                      <pre className="overflow-x-auto rounded-lg border border-zinc-800 bg-zinc-950 p-3 font-mono text-xs leading-relaxed text-zinc-100">
+                        {responseViewMode === 'body'
+                          ? toDisplayBody(extractResponseBody(responseDoc.parsedJson), responseDoc.text)
+                          : responseDoc.text}
+                      </pre>
+                    </div>
+                  </section>
+                </div>
+              ) : (
+                <Tabs
+                  key={`${requestDoc ? 'req' : 'noreq'}-${responseDoc ? 'res' : 'nores'}-${currentDoc.parsedJson ? 'json' : 'text'}`}
+                  defaultValue={requestDoc ? 'request' : responseDoc ? 'response' : currentDoc.parsedJson ? 'pretty' : 'raw'}
+                  className="gap-3"
+                >
+                  {requestUrl ? (
+                    <div className="rounded-lg border bg-muted/30 px-3 py-2 text-xs">
+                      <span className="mr-2 inline-flex rounded border border-border/80 bg-background px-1.5 py-0.5 font-semibold uppercase">
+                        URL
+                      </span>
+                      <code className="break-all">{requestUrl}</code>
+                    </div>
+                  ) : null}
+                  <TabsList variant="line">
+                    {requestDoc ? <TabsTrigger value="request">Request</TabsTrigger> : null}
+                    {responseDoc ? <TabsTrigger value="response">Response</TabsTrigger> : null}
+                    {currentDoc.parsedJson ? <TabsTrigger value="pretty">Pretty</TabsTrigger> : null}
+                    <TabsTrigger value="raw">Raw</TabsTrigger>
+                  </TabsList>
+
+                  {requestDoc ? (
+                    <TabsContent value="request">
+                      <pre className="overflow-x-auto rounded-lg border bg-muted/35 p-3 text-xs leading-relaxed">
+                        {requestDoc.text}
+                      </pre>
+                    </TabsContent>
+                  ) : null}
+
+                  {responseDoc ? (
+                    <TabsContent value="response">
+                      <pre className="overflow-x-auto rounded-lg border bg-muted/35 p-3 text-xs leading-relaxed">
+                        {responseDoc.text}
+                      </pre>
+                    </TabsContent>
+                  ) : null}
+
+                  {currentDoc.parsedJson ? (
+                    <TabsContent value="pretty">
+                      <pre className="overflow-x-auto rounded-lg border bg-muted/35 p-3 text-xs leading-relaxed">
+                        {prettyPrint(currentDoc.parsedJson)}
+                      </pre>
+                    </TabsContent>
+                  ) : null}
+
+                  <TabsContent value="raw">
+                    <pre className="overflow-x-auto rounded-lg border bg-muted/35 p-3 text-xs leading-relaxed">
+                      {currentDoc.text}
+                    </pre>
+                  </TabsContent>
+                </Tabs>
+              )
+            ) : null}
+          </div>
+
+          <DialogFooter showCloseButton className="px-5" />
+        </DialogContent>
+      </Dialog>
+    </>
   )
 }
 
@@ -305,12 +974,12 @@ function EvidenceImage({ sourcePath, label }: EvidenceNodeProps) {
   )
 }
 
-function EvidenceNode({ sourcePath, label }: EvidenceNodeProps) {
-  const displayPath = label || sourcePath
+function EvidenceNode({ sourcePath, label, resolvedPath }: EvidenceNodeProps) {
+  const displayPath = label || resolvedPath || sourcePath
   return evidenceKind(displayPath) === 'image' ? (
-    <EvidenceImage sourcePath={sourcePath} label={label} />
+    <EvidenceImage sourcePath={sourcePath} label={label} resolvedPath={resolvedPath} />
   ) : (
-    <EvidenceFileCard sourcePath={sourcePath} label={label} />
+    <EvidenceFileCard sourcePath={sourcePath} label={label} resolvedPath={resolvedPath} />
   )
 }
 
@@ -478,7 +1147,7 @@ function App() {
 
         if (isEvidenceReference(hrefText)) {
           const resolved = resolveEvidencePath(hrefText, currentReportDirectory, currentSlug)
-          return <EvidenceNode sourcePath={toFileHref(resolved)} label={hrefText} />
+          return <EvidenceNode sourcePath={toFileHref(resolved)} label={hrefText} resolvedPath={resolved} />
         }
 
         if (/^https?:\/\//i.test(hrefText)) {
@@ -500,7 +1169,7 @@ function App() {
 
         if (text && !text.includes('\n') && isEvidenceReference(text)) {
           const resolved = resolveEvidencePath(text, currentReportDirectory, currentSlug)
-          return <EvidenceNode sourcePath={toFileHref(resolved)} label={text} />
+          return <EvidenceNode sourcePath={toFileHref(resolved)} label={text} resolvedPath={resolved} />
         }
 
         return (
