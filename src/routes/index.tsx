@@ -1,5 +1,5 @@
 import { createFileRoute } from '@tanstack/react-router'
-import { Children, Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { Children, Fragment, useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react'
 import {
   ArrowDownUp,
   CheckCircle2,
@@ -936,6 +936,65 @@ function formatMs(ms: number) {
   return `${(ms / 1000).toFixed(2)}s`
 }
 
+function shellEscapeSingleQuoted(value: string) {
+  return `'${String(value).replace(/'/g, `'\"'\"'`)}'`
+}
+
+function isSensitiveHeaderKey(headerKey: string) {
+  const key = headerKey.trim().toLowerCase()
+  return (
+    key === 'authorization' ||
+    key === 'cookie' ||
+    key === 'set-cookie' ||
+    key.includes('api-key') ||
+    key.includes('token') ||
+    key.includes('secret')
+  )
+}
+
+function headerValueForCurl(header: NewmanHeader, revealSecrets: boolean) {
+  const value = header.value ?? ''
+  if (revealSecrets || !isSensitiveHeaderKey(header.key)) {
+    return value
+  }
+  return '<redacted>'
+}
+
+function buildCurlCommand(data: ParsedNewmanEvidence, options?: { revealSecrets?: boolean }) {
+  const revealSecrets = options?.revealSecrets ?? false
+  const segments: string[] = ['curl', '-X', data.method || 'GET', shellEscapeSingleQuoted(data.fullUrl)]
+
+  for (const header of data.requestHeaders) {
+    if (!header.key) continue
+    segments.push('-H', shellEscapeSingleQuoted(`${header.key}: ${headerValueForCurl(header, revealSecrets)}`))
+  }
+
+  if (data.requestBody) {
+    segments.push('--data-raw', shellEscapeSingleQuoted(data.requestBody))
+  }
+
+  return segments.join(' ')
+}
+
+function buildCurlSnippet(data: ParsedNewmanEvidence, options?: { revealSecrets?: boolean }) {
+  const revealSecrets = options?.revealSecrets ?? false
+  const lines: string[] = [`curl --location ${shellEscapeSingleQuoted(data.fullUrl)} \\`]
+
+  for (const header of data.requestHeaders) {
+    if (!header.key) continue
+    lines.push(`  --header ${shellEscapeSingleQuoted(`${header.key}: ${headerValueForCurl(header, revealSecrets)}`)} \\`)
+  }
+
+  if (data.requestBody) {
+    lines.push(`  --data-raw ${shellEscapeSingleQuoted(data.requestBody)}`)
+  } else if (lines.length > 0) {
+    const lastIndex = lines.length - 1
+    lines[lastIndex] = lines[lastIndex].replace(/\s\\$/, '')
+  }
+
+  return lines.join('\n')
+}
+
 function NewmanEvidenceViewer({ data }: { data: ParsedNewmanEvidence }) {
   const [activeTab, setActiveTab] = useState<'response' | 'request' | 'assertions' | 'scripts'>('response')
   const [responseView, setResponseView] = useState<'pretty' | 'raw' | 'headers'>('pretty')
@@ -946,6 +1005,12 @@ function NewmanEvidenceViewer({ data }: { data: ParsedNewmanEvidence }) {
   const failedCount = data.assertions.filter((a) => a.error).length
   const userHeaders = data.requestHeaders.filter((h) => !h.system)
   const statusCodeNum = data.responseCode
+  const [showSecrets, setShowSecrets] = useState(false)
+  const curlCommand = useMemo(() => buildCurlCommand(data, { revealSecrets: showSecrets }), [data, showSecrets])
+  const curlSnippet = useMemo(() => buildCurlSnippet(data, { revealSecrets: showSecrets }), [data, showSecrets])
+  const [showCurlSnippet, setShowCurlSnippet] = useState(failedCount > 0)
+  const curlPanelId = useId()
+  const curlPreviewLine = curlSnippet.split('\n')[0] ?? 'curl ...'
   function copyToClipboard(text: string, label: string) {
     void navigator.clipboard.writeText(text).then(() => {
       setCopied(label)
@@ -1002,11 +1067,76 @@ function NewmanEvidenceViewer({ data }: { data: ParsedNewmanEvidence }) {
         >
           {copied === 'url' ? <CheckCircle2 className="size-3.5 text-emerald-500 animate-in zoom-in-50 duration-200" /> : <Copy className="size-3.5" />}
         </button>
+        <button
+          type="button"
+          className="shrink-0 rounded-md border border-border/70 px-2 py-1 text-[11px] font-semibold text-muted-foreground transition-all duration-200 hover:-translate-y-px hover:bg-muted hover:text-foreground active:translate-y-0"
+          title="Copy cURL command"
+          onClick={() => copyToClipboard(curlCommand, 'curl')}
+        >
+          {copied === 'curl' ? 'Copied cURL' : 'Copy cURL'}
+        </button>
         <span
           className={`inline-flex items-center rounded-md px-2 py-1 text-xs font-bold ring-1 transition-all duration-200 hover:scale-105 hover:brightness-125 ${responseStatusBadgeClass(statusCodeNum)}`}
         >
           {statusCodeNum} {data.responseStatus}
         </span>
+      </div>
+
+      <div className="rounded-lg border border-[#2A2A2A] bg-[#232323] p-2.5">
+        <div className="mb-2 flex items-center justify-between gap-2">
+          <button
+            type="button"
+            className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs font-semibold text-[#B8B8B8] transition-colors hover:bg-[#2E2E2E] hover:text-[#F1F1F1]"
+            onClick={() => setShowCurlSnippet((open) => !open)}
+            aria-expanded={showCurlSnippet}
+            aria-controls={curlPanelId}
+          >
+            <FileCode2 className="size-3.5" />
+            cURL snippet
+            <ChevronDown className={`size-3.5 transition-transform ${showCurlSnippet ? 'rotate-180' : ''}`} />
+          </button>
+          <div className="flex items-center gap-1.5">
+            <button
+              type="button"
+              className={`rounded-md border px-2 py-1 text-[11px] font-semibold transition-colors ${
+                showSecrets
+                  ? 'border-[#B58B2A]/60 bg-[#7A5A13]/20 text-[#F6E27A] hover:bg-[#7A5A13]/30'
+                  : 'border-[#3A3A3A] bg-[#2B2B2B] text-[#C0C0C0] hover:bg-[#333333] hover:text-[#F1F1F1]'
+              }`}
+              onClick={() => setShowSecrets((value) => !value)}
+              aria-pressed={showSecrets}
+            >
+              {showSecrets ? 'Hide secrets' : 'Show secrets'}
+            </button>
+            <button
+              type="button"
+              className="rounded-md border border-[#3A3A3A] bg-[#2B2B2B] px-2 py-1 text-[11px] font-semibold text-[#C0C0C0] transition-colors hover:bg-[#333333] hover:text-[#F1F1F1]"
+              onClick={() => copyToClipboard(curlCommand, 'curl')}
+            >
+              {copied === 'curl' ? 'Copied cURL' : 'Copy cURL'}
+            </button>
+          </div>
+        </div>
+        {!showCurlSnippet ? (
+          <div className="rounded-md border border-[#3A3A3A] bg-[#1F1F1F] px-3 py-2">
+            <code className="block truncate font-mono text-xs text-[#F6E27A]">{curlPreviewLine}</code>
+          </div>
+        ) : null}
+        <span className="mt-1 block min-h-4 text-[11px] text-[#7EE787]" aria-live="polite">
+          {copied === 'curl' ? 'cURL copied to clipboard.' : ''}
+        </span>
+        {showCurlSnippet ? (
+          <div id={curlPanelId} className="overflow-auto rounded-md border border-[#3A3A3A] bg-[#1F1F1F] p-3">
+            <code className="grid gap-1 font-mono text-xs">
+              {curlSnippet.split('\n').map((line, index) => (
+                <span key={`${index}-${line}`} className="grid grid-cols-[1.5rem_1fr] gap-2">
+                  <span className="text-right text-[#8A8A8A] select-none">{index + 1}</span>
+                  <span className="whitespace-pre-wrap break-all text-[#F6E27A]">{line}</span>
+                </span>
+              ))}
+            </code>
+          </div>
+        ) : null}
       </div>
 
       <div className="rounded-xl border border-border/80 bg-card">
