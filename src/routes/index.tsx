@@ -3,6 +3,7 @@ import { Children, Fragment, useEffect, useMemo, useRef, useState, type ReactNod
 import {
   ArrowDownUp,
   CheckCircle2,
+  ChevronDown,
   CircleX,
   Clock,
   Command as CommandIcon,
@@ -367,7 +368,7 @@ function decodeNewmanStream(stream: unknown): string {
   const record = normalizeObject(stream)
   if (!record || !Array.isArray(record.data)) return ''
   try {
-    return String.fromCharCode(...(record.data as number[]))
+    return new TextDecoder('utf-8').decode(new Uint8Array(record.data as number[]))
   } catch {
     return ''
   }
@@ -876,7 +877,15 @@ function renderJsonSyntaxHighlight(content: string): ReactNode {
   })
 }
 
-function CodePreview({ content, animationKey }: { content: string, animationKey?: string }) {
+function CodePreview({
+  content,
+  animationKey,
+  compact = false,
+}: {
+  content: string
+  animationKey?: string
+  compact?: boolean
+}) {
   let highlighted: ReactNode = content
   try {
     JSON.parse(content)
@@ -887,7 +896,13 @@ function CodePreview({ content, animationKey }: { content: string, animationKey?
 
   return (
     <div key={animationKey} className="animate-in fade-in-0 slide-in-from-bottom-1 duration-200">
-      <div className="h-[15rem] min-h-[10rem] max-h-[70vh] resize-y overflow-auto rounded-lg border border-[#2D2D30] bg-[#1E1E1E] p-3 font-mono text-xs leading-relaxed text-[#D4D4D4]">
+      <div
+        className={`overflow-auto rounded-lg border border-[#2D2D30] bg-[#1E1E1E] p-3 font-mono text-xs leading-relaxed text-[#D4D4D4] ${
+          compact
+            ? 'h-[11rem] min-h-[8rem] max-h-[45vh]'
+            : 'h-[15rem] min-h-[10rem] max-h-[70vh] resize-y'
+        }`}
+      >
         <pre className="m-0 min-h-full whitespace-pre">{highlighted}</pre>
       </div>
     </div>
@@ -1242,7 +1257,12 @@ function EvidenceFileCard({ sourcePath, label, resolvedPath }: EvidenceNodeProps
   const displayPath = label || resolvedPath || sourcePath
   const kind = evidenceKind(displayPath)
   const previewable = canPreviewEvidence(kind, sourcePath)
+  const fileNameLower = fileNameFromPath(displayPath).toLowerCase()
+  const isTcJsonEvidence = /\.json$/i.test(fileNameLower) && /^tc[-_]/i.test(fileNameLower)
+  const allowInlinePreview = previewable && isTcJsonEvidence && fileNameLower !== 'report.json'
   const [dialogOpen, setDialogOpen] = useState(false)
+  const [inlinePreviewOpen, setInlinePreviewOpen] = useState(allowInlinePreview)
+  const [inlineTab, setInlineTab] = useState<'request' | 'response'>('response')
   const [loadingViewer, setLoadingViewer] = useState(false)
   const [viewerError, setViewerError] = useState('')
   const [currentDoc, setCurrentDoc] = useState<LoadedEvidenceDoc | null>(null)
@@ -1254,9 +1274,11 @@ function EvidenceFileCard({ sourcePath, label, resolvedPath }: EvidenceNodeProps
   const [requestViewMode, setRequestViewMode] = useState<'body' | 'raw'>('body')
   const [responseViewMode, setResponseViewMode] = useState<'body' | 'raw'>('body')
   const [newmanData, setNewmanData] = useState<ParsedNewmanEvidence | null>(null)
+  const [inlineCopied, setInlineCopied] = useState<'url' | 'payload' | ''>('')
+  const shouldLoadEvidence = previewable && (dialogOpen || inlinePreviewOpen)
 
   useEffect(() => {
-    if (!dialogOpen || !previewable) {
+    if (!shouldLoadEvidence) {
       return
     }
 
@@ -1380,36 +1402,225 @@ function EvidenceFileCard({ sourcePath, label, resolvedPath }: EvidenceNodeProps
     return () => {
       cancelled = true
     }
-  }, [dialogOpen, displayPath, kind, previewable, resolvedPath, sourcePath])
+  }, [displayPath, kind, resolvedPath, shouldLoadEvidence, sourcePath])
+
+  const inlineRequestBody = newmanData
+    ? newmanData.requestBodyParsed
+      ? prettyPrint(newmanData.requestBodyParsed)
+      : newmanData.requestBody || '(empty body)'
+    : requestDoc
+      ? toDisplayBody(extractRequestBody(requestDoc.parsedJson), requestDoc.text)
+      : currentDoc
+        ? toDisplayBody(extractRequestBody(currentDoc.parsedJson), currentDoc.text)
+        : '(loading...)'
+
+  const inlineResponseBody = newmanData
+    ? newmanData.responseBodyParsed
+      ? prettyPrint(newmanData.responseBodyParsed)
+      : newmanData.responseBody || '(empty body)'
+    : responseDoc
+      ? toDisplayBody(extractResponseBody(responseDoc.parsedJson), responseDoc.text)
+      : currentDoc
+        ? toDisplayBody(extractResponseBody(currentDoc.parsedJson), currentDoc.text)
+        : '(loading...)'
+
+  const inlineMethod = newmanData?.method || requestMethod || 'REQ'
+  const inlineUrl = newmanData?.fullUrl || requestUrl || ''
+  const parsedInlineStatusCode = Number.parseInt(responseStatus || '', 10)
+  const inlineStatusCode = newmanData?.responseCode ?? (Number.isFinite(parsedInlineStatusCode) ? parsedInlineStatusCode : null)
+  const inlineStatusText = newmanData?.responseStatus || responseStatus || 'N/A'
+  const inlineActivePayload = inlineTab === 'request' ? inlineRequestBody : inlineResponseBody
+  const inlineReady = !loadingViewer && !!currentDoc
+
+  function copyInline(text: string, type: 'url' | 'payload') {
+    void navigator.clipboard.writeText(text).then(() => {
+      setInlineCopied(type)
+      setTimeout(() => setInlineCopied(''), 1200)
+    })
+  }
 
   return (
     <>
-      <Card size="sm" className="my-2 border border-border/80 py-0 shadow-none transition-colors hover:bg-muted/30">
-        <CardContent className="flex items-center gap-3 py-3">
-          <Badge variant="outline" className="font-semibold">
-            {evidenceBadge(kind)}
-          </Badge>
-          <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-            <span className="truncate text-sm font-semibold text-primary">
-              {fileNameFromPath(displayPath) || 'Open evidence file'}
+      <Card
+        size="sm"
+        className="my-2 border border-border/80 py-0 shadow-none transition-colors hover:bg-muted/30"
+      >
+        <CardContent className="space-y-3 py-3">
+          <div
+            className={`flex items-center gap-3 ${allowInlinePreview ? 'cursor-pointer rounded-md px-1 py-1 hover:bg-muted/40' : ''}`}
+            role={allowInlinePreview ? 'button' : undefined}
+            tabIndex={allowInlinePreview ? 0 : undefined}
+            onClick={allowInlinePreview ? () => setInlinePreviewOpen((open) => !open) : undefined}
+            onKeyDown={
+              allowInlinePreview
+                ? (event) => {
+                    if (event.key === 'Enter' || event.key === ' ') {
+                      event.preventDefault()
+                      setInlinePreviewOpen((open) => !open)
+                    }
+                  }
+                : undefined
+            }
+          >
+            <Badge variant="outline" className="font-semibold">
+              {evidenceBadge(kind)}
+            </Badge>
+            <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+              <span className="truncate text-sm font-semibold text-primary">
+                {fileNameFromPath(displayPath) || 'Open evidence file'}
+              </span>
+              <span className="truncate text-xs text-muted-foreground">{displayPath}</span>
+              {allowInlinePreview ? (
+                <span className="mt-0.5 text-[11px] font-medium text-muted-foreground/90 transition-opacity duration-200">
+                  {inlinePreviewOpen ? 'Click card to collapse preview' : 'Click card to expand request/response'}
+                </span>
+              ) : null}
             </span>
-            <span className="truncate text-xs text-muted-foreground">{displayPath}</span>
-          </span>
-          <span className="flex shrink-0 items-center gap-1.5">
-            <a
-              href={sourcePath}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex h-7 items-center justify-center rounded-[min(var(--radius-md),12px)] border border-border bg-background px-2.5 text-[0.8rem] font-medium text-foreground no-underline transition-colors hover:bg-muted dark:border-input dark:bg-input/30 dark:hover:bg-input/50"
-            >
-              Open file
-            </a>
-            {previewable ? (
-              <Button type="button" size="sm" onClick={() => setDialogOpen(true)}>
-                View payload
-              </Button>
+            {allowInlinePreview ? (
+              <ChevronDown
+                className={`size-4 shrink-0 text-muted-foreground transition-transform ${
+                  inlinePreviewOpen ? 'rotate-180' : ''
+                }`}
+              />
             ) : null}
-          </span>
+            <span className="flex shrink-0 items-center gap-1.5">
+              <a
+                href={sourcePath}
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={(event) => event.stopPropagation()}
+                className="inline-flex h-7 items-center justify-center rounded-[min(var(--radius-md),12px)] border border-border bg-background px-2.5 text-[0.8rem] font-medium text-foreground no-underline transition-colors hover:bg-muted dark:border-input dark:bg-input/30 dark:hover:bg-input/50"
+              >
+                Open file
+              </a>
+              {previewable ? (
+                <Button type="button" size="sm" onClick={(event) => {
+                  event.stopPropagation()
+                  setDialogOpen(true)
+                }}>
+                  Open full viewer
+                </Button>
+              ) : null}
+            </span>
+          </div>
+
+          {allowInlinePreview ? (
+            <div
+              className={`overflow-hidden transition-all duration-250 ease-out ${
+                inlinePreviewOpen ? 'mt-1 max-h-[52rem] opacity-100' : 'mt-0 max-h-0 opacity-0'
+              } ${inlinePreviewOpen ? '' : 'pointer-events-none'}`}
+              onClick={(event) => event.stopPropagation()}
+            >
+              <div className="rounded-lg border border-border/80 bg-muted/20 p-3">
+                <div className="mb-2 flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-1">
+                    <button
+                      type="button"
+                      className={`rounded-md px-2.5 py-1 text-xs font-medium transition-all duration-150 hover:-translate-y-px active:translate-y-0 ${
+                        inlineTab === 'response'
+                          ? 'bg-primary/10 text-primary'
+                          : 'text-muted-foreground hover:bg-muted hover:text-foreground'
+                      }`}
+                      onClick={() => setInlineTab('response')}
+                    >
+                      Response
+                    </button>
+                    <button
+                      type="button"
+                      className={`rounded-md px-2.5 py-1 text-xs font-medium transition-all duration-150 hover:-translate-y-px active:translate-y-0 ${
+                        inlineTab === 'request'
+                          ? 'bg-primary/10 text-primary'
+                          : 'text-muted-foreground hover:bg-muted hover:text-foreground'
+                      }`}
+                      onClick={() => setInlineTab('request')}
+                    >
+                      Request
+                    </button>
+                  </div>
+
+                  {inlineTab === 'response' ? (
+                    <div className="flex items-center gap-1.5">
+                      {inlineReady ? (
+                        <>
+                          <button
+                            type="button"
+                            className="rounded-md border border-border/70 bg-background/80 px-2 py-1 text-[11px] font-medium transition-all duration-150 hover:-translate-y-px hover:bg-muted active:translate-y-0"
+                            onClick={() => copyInline(inlineActivePayload, 'payload')}
+                          >
+                            {inlineCopied === 'payload' ? 'Copied' : 'Copy payload'}
+                          </button>
+                          <span
+                            className={`inline-flex items-center rounded-md px-2 py-1 text-xs font-bold ring-1 transition-all duration-200 ${responseStatusBadgeClass(inlineStatusCode)}`}
+                          >
+                            {inlineStatusCode ?? 'N/A'} {inlineStatusText}
+                          </span>
+                        </>
+                      ) : (
+                        <span className="inline-flex items-center rounded-md border border-border/70 bg-background/70 px-2 py-1 text-xs font-medium text-muted-foreground animate-pulse">
+                          Loading...
+                        </span>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-1.5">
+                      {inlineReady ? (
+                        <>
+                          <button
+                            type="button"
+                            className="rounded-md border border-border/70 bg-background/80 px-2 py-1 text-[11px] font-medium transition-all duration-150 hover:-translate-y-px hover:bg-muted active:translate-y-0"
+                            onClick={() => copyInline(inlineActivePayload, 'payload')}
+                          >
+                            {inlineCopied === 'payload' ? 'Copied' : 'Copy payload'}
+                          </button>
+                          <span
+                            className={`inline-flex min-w-[3.75rem] items-center justify-center rounded px-2 py-1 text-xs font-semibold tracking-wide ring-1 transition-all duration-200 ${methodBadgeClass(inlineMethod)}`}
+                          >
+                            {inlineMethod}
+                          </span>
+                        </>
+                      ) : (
+                        <span className="inline-flex items-center rounded-md border border-border/70 bg-background/70 px-2 py-1 text-xs font-medium text-muted-foreground animate-pulse">
+                          Loading...
+                        </span>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                <div className="mb-2 flex items-start gap-2 rounded-md border border-border/70 bg-background/80 px-2.5 py-1.5 text-xs transition-colors duration-200 hover:bg-background/90">
+                  <code className="block max-h-20 flex-1 overflow-auto break-all">
+                    {inlineReady ? (inlineUrl || 'No URL detected in evidence') : 'Loading URL...'}
+                  </code>
+                  {inlineReady ? (
+                    <button
+                      type="button"
+                      className="shrink-0 rounded-md border border-border/70 px-2 py-1 text-[11px] font-medium transition-all duration-150 hover:-translate-y-px hover:bg-muted active:translate-y-0"
+                      onClick={() => copyInline(inlineUrl || 'No URL detected in evidence', 'url')}
+                    >
+                      {inlineCopied === 'url' ? 'Copied' : 'Copy URL'}
+                    </button>
+                  ) : null}
+                </div>
+
+                {loadingViewer && !currentDoc ? (
+                  <div className="space-y-2 py-1 animate-in fade-in-0 duration-200">
+                    <Skeleton className="h-6 w-28" />
+                    <Skeleton className="h-32 w-full" />
+                  </div>
+                ) : viewerError ? (
+                  <Alert variant="destructive">
+                    <AlertDescription>{viewerError}</AlertDescription>
+                  </Alert>
+                ) : (
+                  <CodePreview
+                    content={inlineActivePayload}
+                    animationKey={`inline-${inlineTab}-${displayPath}`}
+                    compact
+                  />
+                )}
+              </div>
+            </div>
+          ) : null}
         </CardContent>
       </Card>
 
