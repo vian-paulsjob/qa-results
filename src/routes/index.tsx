@@ -1390,7 +1390,9 @@ function EvidenceFileCard({ sourcePath, label, resolvedPath }: EvidenceNodeProps
   const fileNameLower = fileNameFromPath(displayPath).toLowerCase()
   const isTcJsonEvidence = /\.json$/i.test(fileNameLower) && /^tc[-_]/i.test(fileNameLower)
   const allowInlinePreview = previewable && isTcJsonEvidence && fileNameLower !== 'report.json'
+  const isCollection = /\.collection\.json$/i.test(fileNameLower)
   const [dialogOpen, setDialogOpen] = useState(false)
+  const [collectionCopied, setCollectionCopied] = useState(false)
   const [inlinePreviewOpen, setInlinePreviewOpen] = useState(allowInlinePreview)
   const [inlineTab, setInlineTab] = useState<'request' | 'response'>('response')
   const [loadingViewer, setLoadingViewer] = useState(false)
@@ -1630,6 +1632,27 @@ function EvidenceFileCard({ sourcePath, label, resolvedPath }: EvidenceNodeProps
                 }}>
                   Open full viewer
                 </Button>
+              ) : null}
+              {isCollection ? (
+                <button
+                  type="button"
+                  className="inline-flex h-7 items-center justify-center gap-1 rounded-[min(var(--radius-md),12px)] border border-primary/30 bg-primary/10 px-2.5 text-[0.8rem] font-medium text-primary no-underline transition-colors hover:bg-primary/20 dark:border-primary/40 dark:bg-primary/15 dark:hover:bg-primary/25"
+                  onClick={async (event) => {
+                    event.stopPropagation()
+                    try {
+                      const filePath = resolvedPath || sourcePath.replace(/^\/api\/file\?path=/, '')
+                      const res = await fetchJson<{ url: string }>(`/api/collection-url?path=${encodeURIComponent(filePath)}`)
+                      await navigator.clipboard.writeText(res.url)
+                      setCollectionCopied(true)
+                      setTimeout(() => setCollectionCopied(false), 1500)
+                    } catch {
+                      /* clipboard or fetch failure — ignore silently */
+                    }
+                  }}
+                >
+                  <Copy className="size-3.5" />
+                  {collectionCopied ? 'Copied!' : 'Copy collection URL'}
+                </button>
               ) : null}
             </span>
           </div>

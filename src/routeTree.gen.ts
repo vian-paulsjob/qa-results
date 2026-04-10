@@ -15,6 +15,7 @@ import { Route as ApiUploadTicketRouteImport } from './routes/api/upload-ticket'
 import { Route as ApiReportRouteImport } from './routes/api/report'
 import { Route as ApiHealthRouteImport } from './routes/api/health'
 import { Route as ApiFileRouteImport } from './routes/api/file'
+import { Route as ApiCollectionUrlRouteImport } from './routes/api/collection-url'
 import { Route as ApiBrowseRouteImport } from './routes/api/browse'
 import { Route as ApiApproveTicketRouteImport } from './routes/api/approve-ticket'
 
@@ -48,6 +49,11 @@ const ApiFileRoute = ApiFileRouteImport.update({
   path: '/api/file',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiCollectionUrlRoute = ApiCollectionUrlRouteImport.update({
+  id: '/api/collection-url',
+  path: '/api/collection-url',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiBrowseRoute = ApiBrowseRouteImport.update({
   id: '/api/browse',
   path: '/api/browse',
@@ -64,6 +70,7 @@ export interface FileRoutesByFullPath {
   '/about': typeof AboutRoute
   '/api/approve-ticket': typeof ApiApproveTicketRoute
   '/api/browse': typeof ApiBrowseRoute
+  '/api/collection-url': typeof ApiCollectionUrlRoute
   '/api/file': typeof ApiFileRoute
   '/api/health': typeof ApiHealthRoute
   '/api/report': typeof ApiReportRoute
@@ -74,6 +81,7 @@ export interface FileRoutesByTo {
   '/about': typeof AboutRoute
   '/api/approve-ticket': typeof ApiApproveTicketRoute
   '/api/browse': typeof ApiBrowseRoute
+  '/api/collection-url': typeof ApiCollectionUrlRoute
   '/api/file': typeof ApiFileRoute
   '/api/health': typeof ApiHealthRoute
   '/api/report': typeof ApiReportRoute
@@ -85,6 +93,7 @@ export interface FileRoutesById {
   '/about': typeof AboutRoute
   '/api/approve-ticket': typeof ApiApproveTicketRoute
   '/api/browse': typeof ApiBrowseRoute
+  '/api/collection-url': typeof ApiCollectionUrlRoute
   '/api/file': typeof ApiFileRoute
   '/api/health': typeof ApiHealthRoute
   '/api/report': typeof ApiReportRoute
@@ -97,6 +106,7 @@ export interface FileRouteTypes {
     | '/about'
     | '/api/approve-ticket'
     | '/api/browse'
+    | '/api/collection-url'
     | '/api/file'
     | '/api/health'
     | '/api/report'
@@ -107,6 +117,7 @@ export interface FileRouteTypes {
     | '/about'
     | '/api/approve-ticket'
     | '/api/browse'
+    | '/api/collection-url'
     | '/api/file'
     | '/api/health'
     | '/api/report'
@@ -117,6 +128,7 @@ export interface FileRouteTypes {
     | '/about'
     | '/api/approve-ticket'
     | '/api/browse'
+    | '/api/collection-url'
     | '/api/file'
     | '/api/health'
     | '/api/report'
@@ -128,6 +140,7 @@ export interface RootRouteChildren {
   AboutRoute: typeof AboutRoute
   ApiApproveTicketRoute: typeof ApiApproveTicketRoute
   ApiBrowseRoute: typeof ApiBrowseRoute
+  ApiCollectionUrlRoute: typeof ApiCollectionUrlRoute
   ApiFileRoute: typeof ApiFileRoute
   ApiHealthRoute: typeof ApiHealthRoute
   ApiReportRoute: typeof ApiReportRoute
@@ -178,6 +191,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiFileRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/collection-url': {
+      id: '/api/collection-url'
+      path: '/api/collection-url'
+      fullPath: '/api/collection-url'
+      preLoaderRoute: typeof ApiCollectionUrlRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/browse': {
       id: '/api/browse'
       path: '/api/browse'
@@ -200,6 +220,7 @@ const rootRouteChildren: RootRouteChildren = {
   AboutRoute: AboutRoute,
   ApiApproveTicketRoute: ApiApproveTicketRoute,
   ApiBrowseRoute: ApiBrowseRoute,
+  ApiCollectionUrlRoute: ApiCollectionUrlRoute,
   ApiFileRoute: ApiFileRoute,
   ApiHealthRoute: ApiHealthRoute,
   ApiReportRoute: ApiReportRoute,
