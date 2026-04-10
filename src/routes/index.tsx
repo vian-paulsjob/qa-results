@@ -1910,7 +1910,7 @@ function EvidenceFileCard({ sourcePath, label, resolvedPath }: EvidenceNodeProps
                   <TabsList variant="line">
                     {requestDoc ? <TabsTrigger value="request">Request</TabsTrigger> : null}
                     {responseDoc ? <TabsTrigger value="response">Response</TabsTrigger> : null}
-                    {currentDoc.parsedJson ? <TabsTrigger value="pretty">Pretty</TabsTrigger> : null}
+                    {currentDoc.parsedJson ? <TabsTrigger value="pretty">Body</TabsTrigger> : null}
                     <TabsTrigger value="raw">Raw</TabsTrigger>
                   </TabsList>
 
