@@ -1,5 +1,6 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { env } from '#/env'
+import { resolvePublicOrigin } from '#/lib/public-origin'
 
 export const Route = createFileRoute('/api/collection-url')({
   server: {
@@ -14,7 +15,11 @@ export const Route = createFileRoute('/api/collection-url')({
 
         const user = encodeURIComponent(env.BASIC_AUTH_USERNAME)
         const pass = encodeURIComponent(env.BASIC_AUTH_PASSWORD)
-        const origin = env.SERVER_URL || url.origin
+        const origin = resolvePublicOrigin({
+          requestUrl: request.url,
+          headers: request.headers,
+          configuredServerUrl: env.SERVER_URL,
+        })
         const fileUrl = `${origin}/api/file?path=${encodeURIComponent(filePath)}`
 
         const parsed = new URL(fileUrl)
