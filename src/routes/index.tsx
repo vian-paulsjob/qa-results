@@ -1741,6 +1741,13 @@ function EvidenceFileCard({ sourcePath, label, resolvedPath }: EvidenceNodeProps
                 </div>
 
                 <div className="mb-2 flex items-start gap-2 rounded-md border border-border/70 bg-background/80 px-2.5 py-1.5 text-xs transition-colors duration-200 hover:bg-background/90">
+                  {inlineReady ? (
+                    <span
+                      className={`inline-flex min-w-[3.75rem] shrink-0 items-center justify-center rounded px-2 py-0.5 font-semibold tracking-wide ring-1 transition-all duration-200 ${methodBadgeClass(inlineMethod)}`}
+                    >
+                      {inlineMethod}
+                    </span>
+                  ) : null}
                   <code className="block max-h-20 flex-1 overflow-auto break-all">
                     {inlineReady ? (inlineUrl || 'No URL detected in evidence') : 'Loading URL...'}
                   </code>
@@ -1924,8 +1931,17 @@ function EvidenceFileCard({ sourcePath, label, resolvedPath }: EvidenceNodeProps
                 >
                   {requestUrl ? (
                     <div className="rounded-lg border bg-muted/30 px-3 py-2 text-xs">
-                      <span className="mr-2 inline-flex rounded border border-border/80 bg-background px-1.5 py-0.5 font-semibold uppercase">
-                        URL
+                      <span className="mr-2 inline-flex items-center gap-2">
+                        {requestMethod ? (
+                          <span
+                            className={`inline-flex min-w-[3.75rem] items-center justify-center rounded px-2 py-0.5 font-semibold tracking-wide ring-1 ${methodBadgeClass(requestMethod)}`}
+                          >
+                            {requestMethod}
+                          </span>
+                        ) : null}
+                        <span className="inline-flex rounded border border-border/80 bg-background px-1.5 py-0.5 font-semibold uppercase">
+                          URL
+                        </span>
                       </span>
                       <code className="break-all">{requestUrl}</code>
                     </div>
