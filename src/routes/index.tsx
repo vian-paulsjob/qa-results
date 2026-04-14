@@ -952,6 +952,27 @@ function isSensitiveHeaderKey(headerKey: string) {
   )
 }
 
+function isRedactedPlaceholder(value: string) {
+  return /^<\s*redacted(?:-[^>]*)?\s*>$/i.test(value.trim())
+}
+
+function isTransportNoiseHeaderKey(headerKey: string) {
+  const key = headerKey.trim().toLowerCase()
+  return (
+    key === 'postman-token' ||
+    key === 'host' ||
+    key === 'content-length' ||
+    key === 'connection' ||
+    key === 'accept-encoding' ||
+    key === 'user-agent'
+  )
+}
+
+function shouldIncludeHeaderInCurl(header: NewmanHeader) {
+  if (!header.key) return false
+  return !isTransportNoiseHeaderKey(header.key)
+}
+
 function headerValueForCurl(header: NewmanHeader, revealSecrets: boolean) {
   const value = header.value ?? ''
   if (revealSecrets || !isSensitiveHeaderKey(header.key)) {
@@ -965,7 +986,7 @@ function buildCurlCommand(data: ParsedNewmanEvidence, options?: { revealSecrets?
   const segments: string[] = ['curl', '-X', data.method || 'GET', shellEscapeSingleQuoted(data.fullUrl)]
 
   for (const header of data.requestHeaders) {
-    if (!header.key) continue
+    if (!shouldIncludeHeaderInCurl(header)) continue
     segments.push('-H', shellEscapeSingleQuoted(`${header.key}: ${headerValueForCurl(header, revealSecrets)}`))
   }
 
@@ -981,7 +1002,7 @@ function buildCurlSnippet(data: ParsedNewmanEvidence, options?: { revealSecrets?
   const lines: string[] = [`curl --location ${shellEscapeSingleQuoted(data.fullUrl)} \\`]
 
   for (const header of data.requestHeaders) {
-    if (!header.key) continue
+    if (!shouldIncludeHeaderInCurl(header)) continue
     lines.push(`  --header ${shellEscapeSingleQuoted(`${header.key}: ${headerValueForCurl(header, revealSecrets)}`)} \\`)
   }
 
@@ -1008,6 +1029,14 @@ function NewmanEvidenceViewer({ data }: { data: ParsedNewmanEvidence }) {
   const [showSecrets, setShowSecrets] = useState(false)
   const curlCommand = useMemo(() => buildCurlCommand(data, { revealSecrets: showSecrets }), [data, showSecrets])
   const curlSnippet = useMemo(() => buildCurlSnippet(data, { revealSecrets: showSecrets }), [data, showSecrets])
+  const sourceRedactedSecretHeaders = useMemo(
+    () =>
+      data.requestHeaders
+        .filter((header) => isSensitiveHeaderKey(header.key) && isRedactedPlaceholder(header.value ?? ''))
+        .map((header) => header.key),
+    [data.requestHeaders],
+  )
+  const hasSourceRedactedSecrets = sourceRedactedSecretHeaders.length > 0
   const [showCurlSnippet, setShowCurlSnippet] = useState(failedCount > 0)
   const curlPanelId = useId()
   const curlPreviewLine = curlSnippet.split('\n')[0] ?? 'curl ...'
@@ -1125,6 +1154,11 @@ function NewmanEvidenceViewer({ data }: { data: ParsedNewmanEvidence }) {
         <span className="mt-1 block min-h-4 text-[11px] text-[#7EE787]" aria-live="polite">
           {copied === 'curl' ? 'cURL copied to clipboard.' : ''}
         </span>
+        {showSecrets && hasSourceRedactedSecrets ? (
+          <div className="mt-1 text-[11px] text-[#D2B97F]">
+            Source evidence already redacted secret header value(s): {sourceRedactedSecretHeaders.join(', ')}.
+          </div>
+        ) : null}
         {showCurlSnippet ? (
           <div id={curlPanelId} className="overflow-auto rounded-md border border-[#3A3A3A] bg-[#1F1F1F] p-3">
             <code className="grid gap-1 font-mono text-xs">
