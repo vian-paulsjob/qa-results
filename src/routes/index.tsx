@@ -17,6 +17,7 @@ import {
   Loader2,
   Network,
   Scale,
+   Search,
   ShieldCheck,
 } from 'lucide-react'
 import ReactMarkdown, { type Components } from 'react-markdown'
@@ -67,6 +68,7 @@ import {
   DEFAULT_OG_DESCRIPTION,
   DEFAULT_OG_IMAGE_ALT,
 } from '#/lib/seo'
+import { countTextMatches, normalizeSearchQuery, splitTextMatches } from '#/lib/text-search'
 
 type BrowseItem = {
   key: string
@@ -877,26 +879,79 @@ function renderJsonSyntaxHighlight(content: string): ReactNode {
   })
 }
 
+function renderHighlightedText(text: string, query: string, keyPrefix: string) {
+  return splitTextMatches(text, query).map((segment, index) =>
+    segment.match ? (
+      <mark
+        key={`${keyPrefix}-match-${index}`}
+        data-search-match="true"
+        className="rounded bg-[#F6E27A] px-0.5 text-[#201A00] shadow-[0_0_0_1px_rgba(246,226,122,0.28)]"
+      >
+        {segment.text}
+      </mark>
+    ) : (
+      <Fragment key={`${keyPrefix}-text-${index}`}>{segment.text}</Fragment>
+    ),
+  )
+}
+
+function renderJsonSyntaxHighlightWithSearch(content: string, query: string): ReactNode {
+  const lines = content.split('\n')
+  return lines.map((line, lineIndex) => {
+    const tokens = tokenizeJsonLine(line)
+    return (
+      <Fragment key={`${lineIndex}-${line}`}>
+        {tokens.map((token, tokenIndex) => (
+          <span
+            key={`${lineIndex}-${tokenIndex}-${token.value}`}
+            className={colorClassForJsonToken(token.type)}
+          >
+            {renderHighlightedText(token.value, query, `${lineIndex}-${tokenIndex}`)}
+          </span>
+        ))}
+        {lineIndex < lines.length - 1 ? '\n' : null}
+      </Fragment>
+    )
+  })
+}
+
 function CodePreview({
   content,
   animationKey,
   compact = false,
+  searchQuery = '',
 }: {
   content: string
   animationKey?: string
   compact?: boolean
+  searchQuery?: string
 }) {
-  let highlighted: ReactNode = content
+  const containerRef = useRef<HTMLDivElement | null>(null)
+  const normalizedSearchQuery = normalizeSearchQuery(searchQuery)
+
+  let highlighted: ReactNode = renderHighlightedText(content, normalizedSearchQuery, 'plain')
   try {
     JSON.parse(content)
-    highlighted = renderJsonSyntaxHighlight(content)
+    highlighted = normalizedSearchQuery
+      ? renderJsonSyntaxHighlightWithSearch(content, normalizedSearchQuery)
+      : renderJsonSyntaxHighlight(content)
   } catch {
-    highlighted = content
+    highlighted = renderHighlightedText(content, normalizedSearchQuery, 'plain')
   }
+
+  useEffect(() => {
+    if (!normalizedSearchQuery || !containerRef.current) return
+
+    const firstMatch = containerRef.current.querySelector<HTMLElement>('[data-search-match="true"]')
+    if (!firstMatch) return
+
+    firstMatch.scrollIntoView({ block: 'center' })
+  }, [animationKey, normalizedSearchQuery, content])
 
   return (
     <div key={animationKey} className="animate-in fade-in-0 slide-in-from-bottom-1 duration-200">
       <div
+        ref={containerRef}
         className={`overflow-auto rounded-lg border border-[#2D2D30] bg-[#1E1E1E] p-3 font-mono text-xs leading-relaxed text-[#D4D4D4] ${
           compact
             ? 'h-[11rem] min-h-[8rem] max-h-[45vh]'
@@ -1020,6 +1075,7 @@ function NewmanEvidenceViewer({ data }: { data: ParsedNewmanEvidence }) {
   const [activeTab, setActiveTab] = useState<'response' | 'request' | 'assertions' | 'scripts'>('response')
   const [responseView, setResponseView] = useState<'pretty' | 'raw' | 'headers'>('pretty')
   const [requestView, setRequestView] = useState<'body' | 'headers' | 'url'>(data.requestBody ? 'body' : 'headers')
+  const [responseSearchQuery, setResponseSearchQuery] = useState('')
   const [copied, setCopied] = useState('')
 
   const allPassed = data.assertions.length > 0 && data.assertions.every((a) => !a.error && !a.skipped)
@@ -1040,6 +1096,27 @@ function NewmanEvidenceViewer({ data }: { data: ParsedNewmanEvidence }) {
   const [showCurlSnippet, setShowCurlSnippet] = useState(failedCount > 0)
   const curlPanelId = useId()
   const curlPreviewLine = curlSnippet.split('\n')[0] ?? 'curl ...'
+  const responseContent = useMemo(() => {
+    if (responseView === 'pretty' && data.responseBodyParsed) {
+      return prettyPrint(data.responseBodyParsed)
+    }
+    if (responseView === 'headers') {
+      return data.responseHeaders.map((h) => `${h.key}: ${h.value}`).join('\n')
+    }
+    return data.responseBody || '(empty body)'
+  }, [data.responseBody, data.responseBodyParsed, data.responseHeaders, responseView])
+  const normalizedResponseSearch = normalizeSearchQuery(responseSearchQuery)
+  const responseMatchCount = useMemo(
+    () => countTextMatches(responseContent, normalizedResponseSearch),
+    [normalizedResponseSearch, responseContent],
+  )
+  const filteredResponseHeaders = useMemo(() => {
+    if (!normalizedResponseSearch) return data.responseHeaders
+    return data.responseHeaders.filter(
+      (header) => countTextMatches(`${header.key}: ${header.value}`, normalizedResponseSearch) > 0,
+    )
+  }, [data.responseHeaders, normalizedResponseSearch])
+
   function copyToClipboard(text: string, label: string) {
     void navigator.clipboard.writeText(text).then(() => {
       setCopied(label)
@@ -1212,7 +1289,7 @@ function NewmanEvidenceViewer({ data }: { data: ParsedNewmanEvidence }) {
         <div className="max-h-[calc(90vh-280px)] overflow-auto p-3">
           {activeTab === 'response' ? (
             <div key="response" className="space-y-2 animate-in fade-in-0 duration-200">
-              <div className="flex items-center gap-1">
+              <div className="flex flex-wrap items-center gap-1">
                 {(['pretty', 'raw', 'headers'] as const).map((mode) => (
                   <button
                     key={mode}
@@ -1227,17 +1304,32 @@ function NewmanEvidenceViewer({ data }: { data: ParsedNewmanEvidence }) {
                     {mode.charAt(0).toUpperCase() + mode.slice(1)}
                   </button>
                 ))}
+                <div className="ml-auto flex min-w-[16rem] flex-1 items-center gap-2 sm:max-w-xs sm:flex-none">
+                  <div className="relative flex-1">
+                    <Search className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-muted-foreground" />
+                    <Input
+                      value={responseSearchQuery}
+                      onChange={(event) => setResponseSearchQuery(event.target.value)}
+                      placeholder="Search response"
+                      aria-label="Search within response"
+                      className="h-8 border-border/70 bg-background/60 pl-8 text-xs"
+                    />
+                  </div>
+                  {normalizedResponseSearch ? (
+                    <span className="shrink-0 rounded-md border border-border/70 bg-muted/30 px-2 py-1 text-[11px] font-medium text-muted-foreground">
+                      {responseMatchCount} match{responseMatchCount === 1 ? '' : 'es'}
+                    </span>
+                  ) : null}
+                </div>
                 <button
                   type="button"
-                  className="ml-auto rounded p-1 text-muted-foreground transition-all duration-200 hover:bg-muted hover:text-foreground hover:scale-110 active:scale-95"
+                  className="rounded p-1 text-muted-foreground transition-all duration-200 hover:bg-muted hover:text-foreground hover:scale-110 active:scale-95"
                   title="Copy response body"
                   onClick={() =>
                     copyToClipboard(
-                      responseView === 'pretty' && data.responseBodyParsed
-                        ? prettyPrint(data.responseBodyParsed)
-                        : responseView === 'headers'
-                          ? data.responseHeaders.map((h) => `${h.key}: ${h.value}`).join('\n')
-                          : data.responseBody,
+                      responseView === 'headers'
+                        ? data.responseHeaders.map((h) => `${h.key}: ${h.value}`).join('\n')
+                        : responseContent,
                       'response',
                     )
                   }
@@ -1259,23 +1351,29 @@ function NewmanEvidenceViewer({ data }: { data: ParsedNewmanEvidence }) {
                       </tr>
                     </thead>
                     <tbody>
-                      {data.responseHeaders.map((h, i) => (
+                      {filteredResponseHeaders.map((h, i) => (
                         <tr key={i} className="border-b border-border/30 last:border-0">
-                          <td className="px-3 py-1.5 font-mono font-medium text-foreground">{h.key}</td>
-                          <td className="break-all px-3 py-1.5 font-mono text-muted-foreground">{h.value}</td>
+                          <td className="px-3 py-1.5 font-mono font-medium text-foreground">
+                            {renderHighlightedText(h.key, normalizedResponseSearch, `header-key-${i}`)}
+                          </td>
+                          <td className="break-all px-3 py-1.5 font-mono text-muted-foreground">
+                            {renderHighlightedText(h.value, normalizedResponseSearch, `header-value-${i}`)}
+                          </td>
                         </tr>
                       ))}
                     </tbody>
                   </table>
+                  {normalizedResponseSearch && filteredResponseHeaders.length === 0 ? (
+                    <div className="border-t border-border/50 px-3 py-2 text-xs text-muted-foreground">
+                      No header matches.
+                    </div>
+                  ) : null}
                 </div>
               ) : (
                 <CodePreview
-                  content={
-                    responseView === 'pretty' && data.responseBodyParsed
-                      ? prettyPrint(data.responseBodyParsed)
-                      : data.responseBody || '(empty body)'
-                  }
+                  content={responseContent}
                   animationKey={`response-${responseView}`}
+                  searchQuery={responseSearchQuery}
                 />
               )}
             </div>
@@ -1439,6 +1537,7 @@ function EvidenceFileCard({ sourcePath, label, resolvedPath }: EvidenceNodeProps
   const [responseStatus, setResponseStatus] = useState<string | null>(null)
   const [requestViewMode, setRequestViewMode] = useState<'body' | 'raw'>('body')
   const [responseViewMode, setResponseViewMode] = useState<'body' | 'raw'>('body')
+  const [responseSearchQuery, setResponseSearchQuery] = useState('')
   const [newmanData, setNewmanData] = useState<ParsedNewmanEvidence | null>(null)
   const [inlineCopied, setInlineCopied] = useState<'url' | 'payload' | ''>('')
   const shouldLoadEvidence = previewable && (dialogOpen || inlinePreviewOpen)
@@ -1462,6 +1561,7 @@ function EvidenceFileCard({ sourcePath, label, resolvedPath }: EvidenceNodeProps
       setResponseStatus(null)
       setRequestViewMode('body')
       setResponseViewMode('body')
+      setResponseSearchQuery('')
       setNewmanData(null)
 
       try {
@@ -1597,6 +1697,13 @@ function EvidenceFileCard({ sourcePath, label, resolvedPath }: EvidenceNodeProps
   const inlineStatusText = newmanData?.responseStatus || responseStatus || 'N/A'
   const inlineActivePayload = inlineTab === 'request' ? inlineRequestBody : inlineResponseBody
   const inlineReady = !loadingViewer && !!currentDoc
+  const responsePanelContent = responseDoc
+    ? responseViewMode === 'body'
+      ? toDisplayBody(extractResponseBody(responseDoc.parsedJson), responseDoc.text)
+      : responseDoc.text
+    : ''
+  const normalizedResponseSearch = normalizeSearchQuery(responseSearchQuery)
+  const responsePanelMatchCount = countTextMatches(responsePanelContent, normalizedResponseSearch)
 
   function copyInline(text: string, type: 'url' | 'payload') {
     void navigator.clipboard.writeText(text).then(() => {
@@ -1942,17 +2049,31 @@ function EvidenceFileCard({ sourcePath, label, resolvedPath }: EvidenceNodeProps
                         <span>{fileNameFromPath(responseDoc.displayPath)}</span>
                       </span>
                     </div>
+                    <div className="mb-2 flex flex-wrap items-center gap-2">
+                      <div className="relative min-w-[14rem] flex-1">
+                        <Search className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-[#9CB0CF]" />
+                        <Input
+                          value={responseSearchQuery}
+                          onChange={(event) => setResponseSearchQuery(event.target.value)}
+                          placeholder="Search response"
+                          aria-label="Search within response"
+                          className="h-8 border-[#1D4477] bg-[#0A254B] pl-8 text-xs text-[#EAF1FF] placeholder:text-[#7091BF]"
+                        />
+                      </div>
+                      {normalizedResponseSearch ? (
+                        <span className="rounded-md border border-[#1D4477] bg-[#0A254B] px-2 py-1 text-[11px] font-medium text-[#9CB0CF]">
+                          {responsePanelMatchCount} match{responsePanelMatchCount === 1 ? '' : 'es'}
+                        </span>
+                      ) : null}
+                    </div>
                     <div>
                       <div className="mb-1 text-[11px] font-semibold tracking-wide text-[#9CB0CF] uppercase">
                         {responseViewMode === 'body' ? 'Body (read only)' : 'Raw (read only)'}
                       </div>
                       <CodePreview
-                        content={
-                          responseViewMode === 'body'
-                            ? toDisplayBody(extractResponseBody(responseDoc.parsedJson), responseDoc.text)
-                            : responseDoc.text
-                        }
+                        content={responsePanelContent}
                         animationKey={`response-${responseViewMode}`}
+                        searchQuery={responseSearchQuery}
                       />
                     </div>
                   </section>
